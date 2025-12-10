@@ -56,9 +56,9 @@ class SensorAccessor:
                 group, _field = parts
                 if label in df:
                     groups[group].append(label)
-            else:
-                if label in df:
-                    self._data[label] = df[label]
+            elif label in df:
+                # Single-level column names are exposed directly.
+                self._data[label] = df[label]
 
         for group, columns in groups.items():
             short_names = [label.split(".")[1] for label in columns]
@@ -66,7 +66,9 @@ class SensorAccessor:
             subdf.columns = short_names
             self._data[group] = subdf
 
-        self._full_df = pd.concat(self._data.values(), axis=1) if self._data else df
+        # Preserve the original column names to avoid collisions between groups
+        # with identical short names (e.g., acc.x vs gyro.x).
+        self._full_df = df.copy()
 
     @property
     def df(self) -> pd.DataFrame:
@@ -78,7 +80,13 @@ class SensorAccessor:
         return self._full_df
 
     def __getitem__(self, key):
-        return self._data.get(key, None)
+        if key in self._data:
+            return self._data[key]
+
+        if key in self._full_df.columns:
+            return self._full_df[key]
+
+        raise KeyError(f"{key!r} not found in available sensor groups or channels")
 
     def __getattr__(self, name):
         if name in self._data:
