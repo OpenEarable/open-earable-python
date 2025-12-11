@@ -171,6 +171,7 @@ class SensorDataset:
                 )
 
             while True:
+                packet_start = f.tell()
                 header = f.read(10)
                 if len(header) == 0:
                     if self.verbose:
@@ -200,10 +201,22 @@ class SensorDataset:
                     if self.verbose:
                         print(
                             f"Invalid header at packet #{packet_idx}: "
-                            f"SID={sid}, size={size} (>192 or SID>7). "
-                            f"Rolling back previous SID={_sid} sample (if any) and stopping."
+                            f"SID={sid}, size={size} (>192 or SID>7)."
                         )
+
+                    # Try to resync instead of immediately giving up
+                    if self._attempt_resync(f, packet_start, packet_idx, version):
+                        # Do NOT increment packet_idx here; the next loop iteration
+                        # will re-parse from the recovered header.
+                        continue
+
+                    # Resync failed: optional rollback & stop
                     if _sid is not None and _sid in self.data and self.data[_sid]:
+                        if self.verbose:
+                            print(
+                                f"Rolling back last valid sample for SID={_sid} "
+                                f"and stopping parse."
+                            )
                         self.data[_sid].pop()
                     break
 
@@ -330,6 +343,97 @@ class SensorDataset:
             for sid, samples in self.data.items():
                 sensor_name =self.SID_NAMES.get(sid, f"sid{sid}")
                 print(f"  - SID={sid} ({sensor_name}): {len(samples)} samples")
+
+    def _is_plausible_header(self, sid: int, size: int, version: int) -> bool:
+        """Quick sanity check to decide if a (sid, size) pair could be a real packet."""
+        if not (0 <= sid <= 7):
+            return False
+        if size <= 0 or size > 192:
+            return False
+
+        # Microphone: any even size up to 192 is okay (16-bit samples)
+        if sid == self.SENSOR_SID["microphone"]:
+            return size % 2 == 0
+
+        # Known sensor formats (IMU, baro, ppg, optical_temp, bone_acc)
+        if sid in self.sensor_formats:
+            fmt = self.sensor_formats[sid]
+            expected_size = struct.calcsize(fmt)
+
+            # 1: Single-sample packet
+            if size == expected_size:
+                return True
+
+            # 2: Packed samples + 2-byte delta at the end
+            if size > 2 and (size - 2) % expected_size == 0:
+                return True
+
+            return False
+
+        # Legacy bone_acc (version < 2) can have raw multiples of 3h
+        if version < 2 and sid == self.SENSOR_SID["bone_acc"]:
+            return size % struct.calcsize("<3h") == 0
+
+        # Unknown SIDs: treat as implausible for resync
+        return False
+
+    def _attempt_resync(
+        self,
+        f,
+        packet_start_pos: int,
+        packet_idx: int,
+        version: int,
+        max_scan_bytes: int = 256,
+    ) -> bool:
+        """Try to recover from a corrupted header by scanning forward for a plausible one.
+
+        Returns True if a new plausible header was found and the file pointer
+        was moved to that position; False otherwise (caller should then stop)."""
+        original_pos = f.tell()
+
+        if self.verbose:
+            print(
+                f"Attempting resync after packet #{packet_idx} "
+                f"from byte {packet_start_pos} (scan up to {max_scan_bytes} bytes ahead)..."
+            )
+
+        for offset in range(1, max_scan_bytes + 1):
+            candidate_pos = packet_start_pos + offset
+            f.seek(candidate_pos)
+            header = f.read(10)
+            if len(header) < 10:
+                # Not enough bytes left for a full header
+                break
+
+            try:
+                sid, size, time = struct.unpack("<BBQ", header)
+            except struct.error:
+                continue
+
+            if not self._is_plausible_header(sid, size, version):
+                continue
+
+            # We found something that *looks* like a valid header.
+            if self.verbose:
+                sensor_name = self.SID_NAMES.get(sid, f"sid{sid}")
+                print(
+                    f"Resynced at byte offset {candidate_pos} "
+                    f"(skipped {candidate_pos - packet_start_pos} bytes): "
+                    f"SID={sid} ({sensor_name}), size={size}"
+                )
+
+            # Position the stream so that the main loop will re-read this header
+            f.seek(candidate_pos)
+            return True
+
+        # Failed to find a plausible header; restore file position
+        f.seek(original_pos)
+        if self.verbose:
+            print(
+                f"Resync failed within {max_scan_bytes} bytes after packet #{packet_idx}; "
+                f"stopping parse."
+            )
+        return False
 
     def _build_accessors(self) -> None:
         """Construct per-sensor accessors and a combined DataFrame."""
