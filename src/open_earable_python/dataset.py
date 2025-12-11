@@ -113,6 +113,15 @@ class SensorDataset:
         "bone_acc": 7,
     }
 
+    SID_NAMES: Dict[int, str] = {
+        0: "imu",
+        1: "barometer",
+        2: "microphone",
+        4: "ppg",
+        6: "optical_temp",
+        7: "bone_acc",
+    }
+
     sensor_formats: Dict[int, str] = {
         SENSOR_SID["imu"]: "<9f",
         SENSOR_SID["barometer"]: "<2f",
@@ -121,8 +130,9 @@ class SensorDataset:
         SENSOR_SID["bone_acc"]: "<3h",
     }
 
-    def __init__(self, filename: str):
+    def __init__(self, filename: str, verbose: bool = False):
         self.filename = filename
+        self.verbose = verbose
         self.data: Dict[int, List] = defaultdict(list)
         self.audio_stereo: Optional[np.ndarray] = None
         self.bone_sound: Optional[np.ndarray] = None
@@ -143,38 +153,85 @@ class SensorDataset:
         FILE_HEADER_SIZE = struct.calcsize(FILE_HEADER_FORMAT)
         mic_samples: List[int] = []
         _sid: Optional[int] = None
+        packet_idx = 0
 
         with open(self.filename, "rb") as f:
-            version, timestamp = struct.unpack(FILE_HEADER_FORMAT, f.read(FILE_HEADER_SIZE))
-            print(
-                f"📂 File: {os.path.basename(self.filename)}, "
-                f"Version: {version}, Timestamp (since boot): {timestamp}µs"
-            )
+            header_bytes = f.read(FILE_HEADER_SIZE)
+            if len(header_bytes) < FILE_HEADER_SIZE:
+                if self.verbose:
+                    print(f"File {self.filename} is too short to contain a valid header "
+                          f"({len(header_bytes)} bytes read, expected {FILE_HEADER_SIZE}).")
+                return
+
+            version, timestamp = struct.unpack(FILE_HEADER_FORMAT, header_bytes)
+            if self.verbose:
+                print(
+                    f"File: {os.path.basename(self.filename)}, "
+                    f"Version: {version}, Timestamp (since boot): {timestamp}µs"
+                )
 
             while True:
                 header = f.read(10)
+                if len(header) == 0:
+                    if self.verbose:
+                        print(f"Reached EOF after {packet_idx} packets.")
+                    break
+
                 if len(header) < 10:
+                    if self.verbose:
+                        print(
+                            f"Incomplete packet header at packet #{packet_idx}: "
+                            f"got {len(header)} bytes, expected 10. Stopping parse."
+                        )
                     break
 
                 sid, size, time = struct.unpack("<BBQ", header)
+                timestamp_s = time / 1e6
+
+                if self.verbose:
+                    sensor_name =self.SID_NAMES.get(sid, f"sid{sid}")
+                    print(
+                        f"Packet #{packet_idx}: SID={sid} ({sensor_name}), "
+                        f"size={size} bytes, time={timestamp_s:.6f}s"
+                    )
+
+                # Sanity check on size and sid
                 if size > 192 or sid > 7:
-                    if _sid is not None and _sid in self.data:
+                    if self.verbose:
+                        print(
+                            f"Invalid header at packet #{packet_idx}: "
+                            f"SID={sid}, size={size} (>192 or SID>7). "
+                            f"Rolling back previous SID={_sid} sample (if any) and stopping."
+                        )
+                    if _sid is not None and _sid in self.data and self.data[_sid]:
                         self.data[_sid].pop()
                     break
 
                 _sid = sid
                 data = f.read(size)
                 if len(data) < size:
+                    if self.verbose:
+                        print(
+                            f"Truncated payload at packet #{packet_idx}: "
+                            f"expected {size} bytes, got {len(data)}. Stopping parse."
+                        )
                     break
-
-                timestamp_s = time / 1e6
 
                 try:
                     if sid == self.SENSOR_SID["microphone"]:
-                        samples = struct.unpack("<96h", data)
+                        # Expect 16-bit samples; original code assumed exactly 96 samples.
+                        # We keep the same behavior but log if size is unexpected.
+                        if size != 96 * 2 and self.verbose:
+                            print(
+                                f"Microphone packet #{packet_idx} has size={size} bytes, "
+                                f"expected 192 (96 samples). Trying to unpack anyway."
+                            )
+                        n_samples = size // 2
+                        samples = struct.unpack(f"<{n_samples}h", data[: n_samples * 2])
                         mic_samples.extend(samples)
 
                     elif version < 2 and sid == self.SENSOR_SID["bone_acc"]:
+                        # Legacy bone_acc format: raw payload stored for later processing
                         self.data[sid].append((timestamp_s, data))
 
                     elif sid in self.sensor_formats:
@@ -186,29 +243,61 @@ class SensorDataset:
                             self.data[sid].append((timestamp_s, values))
 
                         elif (size - 2) % expected_size == 0:
+                            # Packed samples with delta time at the end
                             delta = struct.unpack("<H", data[-2:])[0] / 1e6
                             data_payload = data[:-2]
-                            for n in range(len(data_payload) // expected_size):
-                                values = struct.unpack(
-                                    fmt,
-                                    data_payload[n * expected_size : (n + 1) * expected_size],
+                            n_packets = len(data_payload) // expected_size
+
+                            if self.verbose:
+                                sensor_name = self.SID_NAMES.get(sid, f"sid{sid}")
+                                print(
+                                    f"Packed samples for SID={sid} ({sensor_name}) at "
+                                    f"{timestamp_s:.6f}s: {n_packets} samples, Δt={delta:.6e}s"
                                 )
+
+                            for n in range(n_packets):
+                                start = n * expected_size
+                                end = (n + 1) * expected_size
+                                values = struct.unpack(fmt, data_payload[start:end])
                                 self.data[sid].append((timestamp_s + n * delta, values))
                         else:
-                            print(f"❌ Could not parse SID {sid} at timestamp {timestamp_s}")
+                            if self.verbose:
+                                sensor_name = self.SID_NAMES.get(sid, f"sid{sid}")
+                                print(
+                                    f"Could not parse SID={sid} ({sensor_name}) at "
+                                    f"{timestamp_s:.6f}s: size={size}, expected {expected_size} "
+                                    f"or k*{expected_size}+2 for packed samples."
+                                )
                             continue
 
                     else:
+                        # Unknown SID, skip but log
+                        if self.verbose:
+                            print(
+                                f"Skipping unknown SID={sid} at packet #{packet_idx}, "
+                                f"time={timestamp_s:.6f}s."
+                            )
                         continue
 
-                except struct.error:
-                    print(f"❌ Could not parse SID {sid} at timestamp {timestamp_s}")
+                except struct.error as e:
+                    if self.verbose:
+                        print(
+                            f"struct.error while parsing packet #{packet_idx} "
+                            f"(SID={sid}, size={size}, time={timestamp_s:.6f}s): {e}"
+                        )
 
+                packet_idx += 1
+
+        # Post-processing microphone samples
         if mic_samples:
+            if self.verbose:
+                print(f"Collected {len(mic_samples)} microphone samples.")
             mic_array = np.array(mic_samples, dtype=np.int16)
             self.audio_stereo = np.column_stack((mic_array[1::2], mic_array[0::2]))
 
         if version < 2 and len(self.data[self.SENSOR_SID["bone_acc"]]) > 0:
+            if self.verbose:
+                print("Processing legacy bone_acc format for version < 2.")
             all_samples: List[Sequence[int]] = []
             sample_counts: List[int] = []
 
@@ -234,6 +323,13 @@ class SensorDataset:
                     )
 
             self.data[self.SENSOR_SID["bone_acc"]] = list(zip(detailed_times, all_samples))
+
+        if self.verbose:
+            # Small summary
+            print("Parsing summary:")
+            for sid, samples in self.data.items():
+                sensor_name =self.SID_NAMES.get(sid, f"sid{sid}")
+                print(f"  - SID={sid} ({sensor_name}): {len(samples)} samples")
 
     def _build_accessors(self) -> None:
         """Construct per-sensor accessors and a combined DataFrame."""
