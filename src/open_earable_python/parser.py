@@ -153,91 +153,72 @@ class Parser:
             if sid not in self.parsers:
                 if self.verbose:
                     print(f"Warning: No parser registered for SID={sid}. Attempting resync...")
-                # new_offset = self._attempt_resync(bytes(buffer), 0, packet_idx, max_scan_bytes=max_resync_scan_bytes)
-                # if new_offset is None:
-                #     del buffer[:1]
-                # else:
-                #     del buffer[:new_offset]
-                # continue
+                new_offset = self._attempt_resync(bytes(buffer), 0, packet_idx, max_scan_bytes=max_resync_scan_bytes)
+                if new_offset is None:
+                    del buffer[:1]
+                else:
+                    del buffer[:new_offset]
+                continue
 
             if size <= 0:
                 if self.verbose:
                     print(f"Invalid size={size} for SID={sid}. Attempting resync...")
-                # new_offset = self._attempt_resync(bytes(buffer), 0, packet_idx, max_scan_bytes=max_resync_scan_bytes)
-                # if new_offset is None:
-                #     del buffer[:1]
-                # else:
-                #     del buffer[:new_offset]
-                # continue
+                new_offset = self._attempt_resync(bytes(buffer), 0, packet_idx, max_scan_bytes=max_resync_scan_bytes)
+                if new_offset is None:
+                    del buffer[:1]
+                else:
+                    del buffer[:new_offset]
+                continue
 
-            if sid not in self.parsers:
-                if self.verbose:
-                    print(f"Unregistered SID={sid} encountered at packet #{packet_idx}. Skipping...")
-                break
-            else:
-                parser = self.parsers[sid]
-                # if hasattr(parser, "expected_size") and parser.expected_size is not None:
-                #     if size != parser.expected_size:
-                #         if self.verbose:
-                #             print(
-                #                 f"Size mismatch for SID={sid}: size={size}, expected={parser.expected_size}. "
-                #                 "Attempting resync..."
-                #             )
-                        # new_offset = self._attempt_resync(bytes(buffer), 0, packet_idx, max_scan_bytes=max_resync_scan_bytes)
-                        # if new_offset is None:
-                        #     del buffer[:1]
-                        # else:
-                        #     del buffer[:new_offset]
-                        # continue
+            parser = self.parsers[sid]
 
-                # Ensure the full payload is available; if not, read more
-                needed = header_size + size
-                if len(buffer) < needed:
-                    chunk = data_stream.read(chunk_size)
-                    if not chunk:
-                        if self.verbose:
-                            print(
-                                f"Truncated payload at packet #{packet_idx}: need {needed} bytes, "
-                                f"have {len(buffer)} bytes and stream ended."
-                            )
-                        break
-                    buffer.extend(chunk)
-                    continue
-
-                payload = bytes(buffer[header_size:needed])
-                try:
-                    values_list = parser.parse(payload)
-                    # Accumulate microphone samples in a single interleaved buffer
-                    if isinstance(parser, MicPayloadParser):
-                        for item in values_list:
-                            samples = item.get("samples")
-                            if samples is None:
-                                continue
-                            # `samples` is a tuple of int16; extend global list
-                            mic_samples.extend(list(samples))
-                    if self.verbose:
-                        if isinstance(parser, MicPayloadParser):
-                            print(
-                                f"Parsed mic packet #{packet_idx} (SID={sid}) successfully: "
-                                f"{len(values_list[0].get('samples', [])) if values_list else 0} samples"
-                            )
-                        else:
-                            print(
-                                f"Parsed packet #{packet_idx} (SID={sid}) successfully: {values_list}"
-                            )
-                except struct.error as e:
+            needed = header_size + size
+            if len(buffer) < needed:
+                chunk = data_stream.read(chunk_size)
+                if not chunk:
                     if self.verbose:
                         print(
-                            f"struct.error while parsing payload at packet #{packet_idx} "
-                            f"(SID={sid}, size={size}): {e}. Attempting resync..."
+                            f"Truncated payload at packet #{packet_idx}: need {needed} bytes, "
+                            f"have {len(buffer)} bytes and stream ended."
                         )
-                    # Resync within the current buffer
-                    new_offset = self._attempt_resync(bytes(buffer), 0, packet_idx, max_scan_bytes=max_resync_scan_bytes)
-                    if new_offset is None:
-                        del buffer[:1]
+                    break
+                buffer.extend(chunk)
+                continue
+
+            payload = bytes(buffer[header_size:needed])
+            try:
+                values_list = parser.parse(payload)
+                # Accumulate microphone samples in a single interleaved buffer
+                if isinstance(parser, MicPayloadParser):
+                    for item in values_list:
+                        samples = item.get("samples")
+                        if samples is None:
+                            continue
+                        # `samples` is a tuple of int16; extend global list
+                        mic_samples.extend(list(samples))
+                if self.verbose:
+                    if isinstance(parser, MicPayloadParser):
+                        print(
+                            f"Parsed mic packet #{packet_idx} (SID={sid}) successfully: "
+                            f"{len(values_list[0].get('samples', [])) if values_list else 0} samples"
+                        )
                     else:
-                        del buffer[:new_offset]
-                    continue
+                        print(
+                            f"Parsed packet #{packet_idx} (SID={sid}) successfully: {values_list}"
+                        )
+            except struct.error as e:
+                if self.verbose:
+                    print(
+                        f"struct.error while parsing payload at packet #{packet_idx} "
+                        f"(SID={sid}, size={size}): {e}. Attempting resync..."
+                    )
+                # Resync within the current buffer
+                new_offset = self._attempt_resync(bytes(buffer), 0, packet_idx, max_scan_bytes=max_resync_scan_bytes)
+                if new_offset is None:
+                    del buffer[:1]
+                else:
+                    del buffer[:new_offset]
+                continue
 
             if parser.should_build_df():
                 for values in values_list:
