@@ -1,7 +1,9 @@
 import struct
 from open_earable_python.scheme import SensorScheme, ParseType
 import pandas as pd
-from typing import BinaryIO
+from typing import BinaryIO, Dict, List, Optional
+from dataclasses import dataclass
+import numpy as np
 
 class PayloadParser:
     """Abstract base class for payload parsers.
@@ -11,8 +13,8 @@ class PayloadParser:
 
     expected_size: int
 
-    def parse(self, data: bytes) -> list[dict]:
-        """Parse a payload into a dictionary of values.
+    def parse(self, data: bytes, **kwargs) -> List[dict]:
+        """Parse a payload into one or more decoded samples.
 
         Parameters
         ----------
@@ -20,6 +22,38 @@ class PayloadParser:
             Raw payload bytes (without header).
         """
         raise NotImplementedError
+    
+    def should_build_df(self) -> bool:
+        """Whether this parser's output should be included in the final DataFrame.
+
+        By default, all parsers are included. Subclasses can override this method
+        to exclude certain parsers (e.g., microphone parsers).
+        """
+        return True
+
+
+# MARK: - ParseResult dataclass
+
+@dataclass
+class ParseResult:
+    """Result of parsing a stream.
+
+    - `sensor_dfs`: per-SID DataFrames (timestamp-indexed)
+    - `mic_samples`: interleaved int16 samples accumulated across mic packets
+    - `audio_stereo`: (N,2) int16 array [inner, outer] if microphone data was present
+    """
+
+    sensor_dfs: Dict[int, pd.DataFrame]
+    mic_samples: List[int]
+    audio_stereo: Optional[np.ndarray] = None
+
+    @staticmethod
+    def mic_samples_to_stereo(mic_samples: List[int]) -> Optional[np.ndarray]:
+        if not mic_samples:
+            return None
+        mic_array = np.array(mic_samples, dtype=np.int16)
+        # Original behavior: [inner, outer] = [odd, even]
+        return np.column_stack((mic_array[1::2], mic_array[0::2]))
 
 class Parser:
     def __init__(self, parsers: dict[int, PayloadParser], verbose: bool = False):
@@ -49,7 +83,7 @@ class Parser:
         *,
         chunk_size: int = 4096,
         max_resync_scan_bytes: int = 256,
-    ) -> dict[int, pd.DataFrame]:
+    ) -> ParseResult:
         """Parse a binary byte stream into per-SID DataFrames.
 
         This function reads from `data_stream` incrementally in chunks and keeps an
@@ -69,17 +103,18 @@ class Parser:
 
         Returns
         -------
-        dict
-            Mapping from SID -> pandas DataFrame indexed by "timestamp".
+        ParseResult
+            Contains per-SID DataFrames, microphone samples, and stereo PCM audio if present.
         """
         rows_by_sid: dict[int, list[dict]] = {}
 
         header_size = 10
         buffer = bytearray()
         packet_idx = 0
+        mic_samples: List[int] = []
 
-        def flush_to_dataframes() -> dict[int, pd.DataFrame]:
-            result: dict[int, pd.DataFrame] = {}
+        def flush_to_dataframes() -> Dict[int, pd.DataFrame]:
+            result: Dict[int, pd.DataFrame] = {}
             for sid, rows in rows_by_sid.items():
                 df = pd.DataFrame(rows)
                 if not df.empty and "timestamp" in df.columns:
@@ -172,10 +207,24 @@ class Parser:
                 payload = bytes(buffer[header_size:needed])
                 try:
                     values_list = parser.parse(payload)
+                    # Accumulate microphone samples in a single interleaved buffer
+                    if isinstance(parser, MicPayloadParser):
+                        for item in values_list:
+                            samples = item.get("samples")
+                            if samples is None:
+                                continue
+                            # `samples` is a tuple of int16; extend global list
+                            mic_samples.extend(list(samples))
                     if self.verbose:
-                        print(
-                            f"Parsed packet #{packet_idx} (SID={sid}) successfully: {values_list}"
-                        )
+                        if isinstance(parser, MicPayloadParser):
+                            print(
+                                f"Parsed mic packet #{packet_idx} (SID={sid}) successfully: "
+                                f"{len(values_list[0].get('samples', [])) if values_list else 0} samples"
+                            )
+                        else:
+                            print(
+                                f"Parsed packet #{packet_idx} (SID={sid}) successfully: {values_list}"
+                            )
                 except struct.error as e:
                     if self.verbose:
                         print(
@@ -189,31 +238,34 @@ class Parser:
                     else:
                         del buffer[:new_offset]
                     continue
-            
-            for values in values_list:
-                # Flatten nested group structure (group.component -> value)
-                flat_values: dict[str, object] = {}
-                for key, val in values.items():
-                    if key == "t_delta":
-                        timestamp_s += val / 1e6
-                        continue
-                    if isinstance(val, dict):
-                        for sub_key, sub_val in val.items():
-                            flat_values[f"{key}.{sub_key}"] = sub_val
-                    else:
-                        flat_values[key] = val
 
-                row = {
-                    "timestamp": timestamp_s,
-                    **flat_values,
-                }
-                rows_by_sid.setdefault(sid, []).append(row)
+            if parser.should_build_df():
+                for values in values_list:
+                    # Flatten nested group structure (group.component -> value)
+                    flat_values: dict[str, object] = {}
+                    for key, val in values.items():
+                        if key == "t_delta":
+                            timestamp_s += val / 1e6
+                            continue
+                        if isinstance(val, dict):
+                            for sub_key, sub_val in val.items():
+                                flat_values[f"{key}.{sub_key}"] = sub_val
+                        else:
+                            flat_values[key] = val
+
+                    row = {
+                        "timestamp": timestamp_s,
+                        **flat_values,
+                    }
+                    rows_by_sid.setdefault(sid, []).append(row)
 
             # Consume this packet from the buffer
             del buffer[:needed]
             packet_idx += 1
 
-        return flush_to_dataframes()
+        sensor_dfs = flush_to_dataframes()
+        audio_stereo = ParseResult.mic_samples_to_stereo(mic_samples)
+        return ParseResult(sensor_dfs=sensor_dfs, mic_samples=mic_samples, audio_stereo=audio_stereo)
 
     def _parse_header(self, header: bytes) -> tuple[int, int, int]:
         """Parse a 10-byte packet header into (sid, size, time)."""
@@ -245,7 +297,7 @@ class Parser:
         packet_start: int,
         packet_idx: int,
         max_scan_bytes: int = 64,
-    ) -> int:
+    ) -> Optional[int]:
         """Try to recover from a corrupted header by scanning forward.
 
         Returns a new offset where a plausible header was found, or ``None``
@@ -301,7 +353,7 @@ class MicPayloadParser(PayloadParser):
         self.expected_size = sample_count * 2  # int16 samples
         self.verbose = verbose
 
-    def parse(self, data: bytes) -> list[dict]:
+    def parse(self, data: bytes, **kwargs) -> List[dict]:
         # Allow slight deviations in size but warn if unexpected
         if len(data) != self.expected_size and self.verbose:
             print(
@@ -318,6 +370,9 @@ class MicPayloadParser(PayloadParser):
         format_str = f"<{n_samples}h"
         samples = struct.unpack_from(format_str, data, 0)
         return [{"samples": samples}]
+    
+    def should_build_df(self) -> bool:
+        return False
 
 # MARK: - SchemePayloadParser
 
@@ -343,7 +398,7 @@ class SchemePayloadParser(PayloadParser):
     
     def check_size(self, data: bytes) -> None:
         size = len(data)
-        if size != self.expected_size and size % self.expected_size != 2:
+        if size != self.expected_size and not (size > self.expected_size and (size - 2) % self.expected_size == 0):
             raise ValueError(
                 f"Payload size {size} bytes does not match expected size "
                 f"{self.expected_size} bytes for sensor '{self.sensor_scheme.name}'"
@@ -351,17 +406,18 @@ class SchemePayloadParser(PayloadParser):
         
     def is_buffered(self, data: bytes) -> bool:
         size = len(data)
-        return size == self.expected_size
+        return size > self.expected_size and (size - 2) % self.expected_size == 0
 
-    def parse(self, data: bytes) -> list[dict]:
+    def parse(self, data: bytes, **kwargs) -> List[dict]:
         self.check_size(data)
         if self.is_buffered(data):
             results = []
             # get the t_delta as an uint16 from the last two bytes
             t_delta = struct.unpack_from("<H", data, len(data) - 2)[0]
-            n_packets = len(data) // self.expected_size
+            payload = data[:-2]
+            n_packets = len(payload) // self.expected_size
             for i in range(n_packets):
-                packet_data = data[i * self.expected_size : (i + 1) * self.expected_size]
+                packet_data = payload[i * self.expected_size : (i + 1) * self.expected_size]
                 parsed_packet = self.parse_packet(packet_data)
                 # add t_delta to the parsed packet
                 parsed_packet["t_delta"] = t_delta
@@ -378,7 +434,7 @@ class SchemePayloadParser(PayloadParser):
         for group in self.sensor_scheme.groups:
             group_data = {}
             for component in group.components:
-                if component.data_type == "uint8":
+                if component.data_type == ParseType.UINT8:
                     value = struct.unpack_from("<B", data, offset)[0]
                     offset += 1
                 elif component.data_type == ParseType.UINT16:
