@@ -191,10 +191,12 @@ class Parser:
                     continue
             
             for values in values_list:
-
                 # Flatten nested group structure (group.component -> value)
                 flat_values: dict[str, object] = {}
                 for key, val in values.items():
+                    if key == "t_delta":
+                        timestamp_s += val / 1e6
+                        continue
                     if isinstance(val, dict):
                         for sub_key, sub_val in val.items():
                             flat_values[f"{key}.{sub_key}"] = sub_val
@@ -203,7 +205,6 @@ class Parser:
 
                 row = {
                     "timestamp": timestamp_s,
-                    "raw_time": time,
                     **flat_values,
                 }
                 rows_by_sid.setdefault(sid, []).append(row)
