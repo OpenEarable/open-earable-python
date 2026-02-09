@@ -254,8 +254,6 @@ class SensorDataset:
             labels = LABELS.get(name, [f"val{i}" for i in range(0)])
             if sid in data_dict and isinstance(data_dict[sid], pd.DataFrame):
                 df = data_dict[sid]
-                # print duplicated indices and then drop them
-                print("duplicated indices",df.index.duplicated())
                 df = df[~df.index.duplicated(keep="first")]
             else:
                 df = pd.DataFrame(columns=labels)
