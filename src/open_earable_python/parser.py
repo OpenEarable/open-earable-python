@@ -52,6 +52,9 @@ class ParseResult:
         if not mic_samples:
             return None
         mic_array = np.array(mic_samples, dtype=np.int16)
+        # If odd number of samples, drop the last one to ensure even pairing
+        if len(mic_array) % 2 != 0:
+            mic_array = mic_array[:-1]
         # Original behavior: [inner, outer] = [odd, even]
         return np.column_stack((mic_array[1::2], mic_array[0::2]))
 
@@ -206,7 +209,7 @@ class Parser:
                         print(
                             f"Parsed packet #{packet_idx} (SID={sid}) successfully: {values_list}"
                         )
-            except struct.error as e:
+            except Exception as e:
                 if self.verbose:
                     print(
                         f"struct.error while parsing payload at packet #{packet_idx} "
