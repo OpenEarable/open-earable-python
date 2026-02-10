@@ -1,42 +1,35 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "open-earable-python"
-version = "0.1.0"
+version = "0.0.1"
 description = "Reader and utilities for multi-sensor OpenEarable recordings."
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
 authors = [
-  { name = "Your Name", email = "you@example.com" }
+  { name = "OpenEarable" }
 ]
 keywords = ["openearable", "earable", "sensors", "imu", "ppg", "audio", "wearables", ".oe"]
 classifiers = [
   "Programming Language :: Python :: 3",
+  "Development Status :: 4 - Beta",
   "Operating System :: OS Independent",
   "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
   "Topic :: Scientific/Engineering",
 ]
 
 dependencies = [
   "numpy",
   "pandas",
-  "matplotlib",
   "ipython",
   "scipy",
-  "scikit-learn",
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-user/open-earable-python"
-Source = "https://github.com/your-user/open-earable-python"
-Issues = "https://github.com/your-user/open-earable-python/issues"
-
-[tool.setuptools]
-package-dir = { "" = "src" }
-
-[tool.setuptools.packages.find]
-where = ["src"]
+Source = "https://github.com/OpenEarable/open-earable-python"
+Issues = "https://github.com/OpenEarable/open-earable-python/issues"
