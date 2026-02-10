@@ -1,12 +1,11 @@
 # Open Earable Python
 
-A Python toolkit for parsing, analyzing, and visualizing multi-sensor recordings from an OpenEarable device. The library provides pandas-friendly accessors for IMU, barometer, PPG, bone accelerometer, optical temperature, and microphone data, along with plotting and audio utilities.
+A Python toolkit for parsing and analyzing multi-sensor recordings from an OpenEarable device. The library provides pandas-friendly accessors for IMU, barometer, PPG, bone accelerometer, optical temperature, and microphone data, along with audio utilities.
 
 ## Features
 - Load `.oe` recordings into a single time-aligned pandas DataFrame.
 - Convenient attribute and key-based accessors for grouped sensors and individual channels.
-- Plot common sensor streams and play or export microphone audio directly from notebooks.
-- Convert bone-accelerometer signals into audio with optional noise reduction and equalization.
+- Play or export microphone audio directly from notebooks.
 - Export combined sensor data to CSV for downstream analysis.
 
 ## Installation
@@ -21,7 +20,7 @@ pip install open-earable-python
 From source (for development):
 
 ```bash
-git clone https://github.com/your-user/open-earable-python.git
+git clone https://github.com/OpenEarable/open-earable-python.git
 cd open-earable-python
 python -m venv .venv
 source .venv/bin/activate
@@ -90,25 +89,16 @@ ppg.ambient
 Load several files at once and iterate over them:
 
 ```python
-from open_earable_python.dataset import display_recordings, load_recordings
+from open_earable_python.dataset import load_recordings
 
 paths = ["session1.oe", "session2.oe"]
 recordings = load_recordings(paths)
 
-# Plot and preview audio for each recording (e.g., in a notebook)
-display_recordings(recordings)
+# Access a specific recording
+first = recordings[0]
+print(first.list_sensors())
 ```
 
 ### Audio utilities
 - `play_audio(sampling_rate=48000)`: play stereo microphone data in a Jupyter environment.
 - `save_audio(path, sampling_rate=48000)`: export microphone audio to WAV.
-- `process_bone(target_sampling_rate=16000, enable_noise_reduction=True, enable_equalization=True)`: convert bone accelerometer data into audio with optional processing.
-
-## Development
-Run the test suite after making changes:
-
-```bash
-pytest
-```
-
-The test suite expects pandas, NumPy, SciPy, scikit-learn, matplotlib, and IPython to be available; install them with `pip install -e .` as shown above.
