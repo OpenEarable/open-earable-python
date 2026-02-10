@@ -1,18 +1,14 @@
 import os
-import struct
 import tempfile
 from collections import defaultdict
 from typing import Dict, List, Optional, Sequence
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from open_earable_python import parser
 import open_earable_python.scheme as scheme
 from IPython.display import Audio, display
 from scipy.io.wavfile import write
-from scipy.signal import butter, filtfilt, istft, resample, stft
-from sklearn.decomposition import PCA
 
 LABELS: Dict[str, List[str]] = {
     "imu": [
@@ -31,7 +27,7 @@ COLORS: Dict[str, List[str]] = {
 }
 
 
-class SensorAccessor:
+class _SensorAccessor:
     """Convenience wrapper around a pandas DataFrame to provide grouped access
     to sensor channels.
 
@@ -142,11 +138,11 @@ class SensorDataset:
         self.bone_sound: Optional[np.ndarray] = None
         self.df: pd.DataFrame = pd.DataFrame()
 
-        self.imu = SensorAccessor(pd.DataFrame(columns=LABELS["imu"]), LABELS["imu"])
-        self.barometer = SensorAccessor(pd.DataFrame(columns=LABELS["barometer"]), LABELS["barometer"])
-        self.ppg = SensorAccessor(pd.DataFrame(columns=LABELS["ppg"]), LABELS["ppg"])
-        self.bone_acc = SensorAccessor(pd.DataFrame(columns=LABELS["bone_acc"]), LABELS["bone_acc"])
-        self.optical_temp = SensorAccessor(pd.DataFrame(columns=LABELS["optical_temp"]), LABELS["optical_temp"])
+        self.imu = _SensorAccessor(pd.DataFrame(columns=LABELS["imu"]), LABELS["imu"])
+        self.barometer = _SensorAccessor(pd.DataFrame(columns=LABELS["barometer"]), LABELS["barometer"])
+        self.ppg = _SensorAccessor(pd.DataFrame(columns=LABELS["ppg"]), LABELS["ppg"])
+        self.bone_acc = _SensorAccessor(pd.DataFrame(columns=LABELS["bone_acc"]), LABELS["bone_acc"])
+        self.optical_temp = _SensorAccessor(pd.DataFrame(columns=LABELS["optical_temp"]), LABELS["optical_temp"])
 
         self.parser: parser.Parser = parser.Parser({
             self.SENSOR_SID["imu"]: parser.SchemePayloadParser(scheme.SensorScheme(
@@ -262,7 +258,7 @@ class SensorDataset:
             self.sensor_dfs[sid] = df
 
             # Create/update SensorAccessor for this sensor name
-            setattr(self, name, SensorAccessor(df, labels))
+            setattr(self, name, _SensorAccessor(df, labels))
 
         # Clear combined dataframe; it will be built lazily on demand
         self.df = pd.DataFrame()
@@ -274,7 +270,7 @@ class SensorDataset:
         available_sensors = []
         for name, sid in self.SENSOR_SID.items():
             accessor = getattr(self, name, None)
-            if isinstance(accessor, SensorAccessor) and not accessor.df.empty:
+            if isinstance(accessor, _SensorAccessor) and not accessor.df.empty:
                 available_sensors.append(name)
         return available_sensors
 
@@ -296,7 +292,7 @@ class SensorDataset:
                            f"Known sensors: {sorted(self.SENSOR_SID.keys())}")
 
         accessor = getattr(self, name, None)
-        if isinstance(accessor, SensorAccessor):
+        if isinstance(accessor, _SensorAccessor):
             return accessor.to_dataframe()
 
         # Fallback: should not normally happen, but return an empty DataFrame
