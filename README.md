@@ -99,6 +99,63 @@ first = recordings[0]
 print(first.list_sensors())
 ```
 
+## IPC Control API (WebSocket)
+Use `OpenEarableIPCClient` to connect to your local IPC daemon (`ws://127.0.0.1:8765/ws`) and control devices live.
+
+```python
+import asyncio
+from open_earable_python import OpenEarableIPCClient
+
+
+async def main():
+    async with OpenEarableIPCClient() as client:
+        await client.start_scan(check_and_request_permissions=True)
+
+        # Wait for a discovered device.
+        scan_event = await client.wait_for_event("scan", timeout=10)
+        device_id = scan_event["device"]["id"]
+
+        await client.connect_device(device_id)
+        wearable = await client.get_wearable(device_id)
+        print("Connected:", wearable["name"])
+
+        # Configure sensor stream frequency via action API.
+        await client.invoke_action(
+            device_id=device_id,
+            action="set_sensor_frequency_best_effort",
+            args={
+                "configuration_name": "acceleration",
+                "target_hz": 50,
+                "stream_data": True,
+            },
+        )
+
+        # Subscribe and consume stream events.
+        subscription = await client.subscribe(
+            device_id=device_id,
+            stream="sensor_values",
+            args={"sensor_name": "acceleration"},
+        )
+
+        samples = 0
+        async for event in subscription:
+            print(event.data)
+            samples += 1
+            if samples >= 10:
+                break
+
+        await subscription.close()
+        await client.disconnect(device_id)
+
+
+asyncio.run(main())
+```
+
+### IPC notes
+- Use `client.call(method, params)` for raw access to any server method.
+- Use `client.on_event(name, callback)` to listen to events like `ready`, `scan`, `connected`, and `stream`.
+- `subscribe(...)` returns an async iterator. `stream_error` raises `IPCStreamError` in the iterator.
+
 ### Audio utilities
 - `play_audio(sampling_rate=48000)`: play stereo microphone data in a Jupyter environment.
 - `save_audio(path, sampling_rate=48000)`: export microphone audio to WAV.
