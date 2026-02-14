@@ -20,6 +20,7 @@ LABELS: Dict[str, List[str]] = {
     "ppg": ["ppg.red", "ppg.ir", "ppg.green", "ppg.ambient"],
     "bone_acc": ["bone_acc.x", "bone_acc.y", "bone_acc.z"],
     "optical_temp": ["optical_temp"],
+    "microphone": ["mic.inner", "mic.outer"],
 }
 
 COLORS: Dict[str, List[str]] = {
@@ -135,6 +136,8 @@ class SensorDataset:
         # Per-SID dataframes built in _build_accessors
         self.sensor_dfs: Dict[int, pd.DataFrame] = {}
         self.audio_stereo: Optional[np.ndarray] = None
+        self.audio_df: pd.DataFrame = pd.DataFrame()
+        self._audio_df_sampling_rate: Optional[int] = None
         self.bone_sound: Optional[np.ndarray] = None
         self.df: pd.DataFrame = pd.DataFrame()
 
@@ -143,6 +146,7 @@ class SensorDataset:
         self.ppg = _SensorAccessor(pd.DataFrame(columns=LABELS["ppg"]), LABELS["ppg"])
         self.bone_acc = _SensorAccessor(pd.DataFrame(columns=LABELS["bone_acc"]), LABELS["bone_acc"])
         self.optical_temp = _SensorAccessor(pd.DataFrame(columns=LABELS["optical_temp"]), LABELS["optical_temp"])
+        self.microphone = _SensorAccessor(pd.DataFrame(columns=LABELS["microphone"]), LABELS["microphone"])
 
         self.parser: parser.Parser = parser.Parser({
             self.SENSOR_SID["imu"]: parser.SchemePayloadParser(scheme.SensorScheme(
@@ -245,10 +249,16 @@ class SensorDataset:
         The combined DataFrame over all sensors is built lazily in
         :meth:`get_dataframe`.
         """
+        self.audio_stereo = self.parse_result.audio_stereo
+        self.audio_df = pd.DataFrame()
+        self._audio_df_sampling_rate = None
+
         data_dict = self.parse_result.sensor_dfs
         for name, sid in self.SENSOR_SID.items():
             labels = LABELS.get(name, [f"val{i}" for i in range(0)])
-            if sid in data_dict and isinstance(data_dict[sid], pd.DataFrame):
+            if name == "microphone":
+                df = self.get_audio_dataframe()
+            elif sid in data_dict and isinstance(data_dict[sid], pd.DataFrame):
                 df = data_dict[sid]
                 df = df[~df.index.duplicated(keep="first")]
             else:
@@ -262,8 +272,6 @@ class SensorDataset:
 
         # Clear combined dataframe; it will be built lazily on demand
         self.df = pd.DataFrame()
-
-        self.audio_stereo = self.parse_result.audio_stereo
 
     def list_sensors(self) -> List[str]:
         """Return a list of available sensor names in the dataset."""
@@ -329,6 +337,78 @@ class SensorDataset:
         self.df = pd.concat(reindexed_dfs, axis=1)
 
         return self.df
+
+    def get_audio_dataframe(self, sampling_rate: int = 48000) -> pd.DataFrame:
+        """Return microphone audio as a timestamp-indexed stereo DataFrame.
+
+        The returned DataFrame has:
+        - index: ``timestamp`` in seconds
+        - columns: ``mic.inner`` and ``mic.outer`` (int16 PCM)
+        """
+        if sampling_rate <= 0:
+            raise ValueError(f"sampling_rate must be > 0, got {sampling_rate}")
+
+        if (
+            self._audio_df_sampling_rate == sampling_rate
+            and not self.audio_df.empty
+        ):
+            return self.audio_df
+
+        mic_packets = getattr(self.parse_result, "mic_packets", [])
+        if not mic_packets:
+            self.audio_df = pd.DataFrame(columns=["mic.inner", "mic.outer"])
+            self.audio_df.index.name = "timestamp"
+            self._audio_df_sampling_rate = sampling_rate
+            return self.audio_df
+
+        timestamps: List[np.ndarray] = []
+        inner_values: List[np.ndarray] = []
+        outer_values: List[np.ndarray] = []
+
+        for packet in mic_packets:
+            samples = np.asarray(packet["samples"], dtype=np.int16)
+            if samples.size < 2:
+                continue
+
+            # Interleaved stream: [outer0, inner0, outer1, inner1, ...]
+            frame_count = samples.size // 2
+            trimmed = samples[: frame_count * 2]
+
+            outer = trimmed[0::2]
+            inner = trimmed[1::2]
+
+            start_ts = float(packet["timestamp"])
+            ts = start_ts + (np.arange(frame_count, dtype=np.float64) / sampling_rate)
+
+            timestamps.append(ts)
+            inner_values.append(inner)
+            outer_values.append(outer)
+
+        if not timestamps:
+            self.audio_df = pd.DataFrame(columns=["mic.inner", "mic.outer"])
+            self.audio_df.index.name = "timestamp"
+            self._audio_df_sampling_rate = sampling_rate
+            return self.audio_df
+
+        all_ts = np.concatenate(timestamps)
+        all_inner = np.concatenate(inner_values)
+        all_outer = np.concatenate(outer_values)
+
+        self.audio_df = pd.DataFrame(
+            {
+                "mic.inner": all_inner,
+                "mic.outer": all_outer,
+            },
+            index=all_ts,
+        )
+        self.audio_df.index.name = "timestamp"
+        self.audio_df = self.audio_df[~self.audio_df.index.duplicated(keep="first")]
+        self._audio_df_sampling_rate = sampling_rate
+
+        if sampling_rate == 48000:
+            self.sensor_dfs[self.SENSOR_SID["microphone"]] = self.audio_df
+
+        return self.audio_df
 
     def export_csv(self) -> None:
         base_filename, _ = os.path.splitext(self.filename)
