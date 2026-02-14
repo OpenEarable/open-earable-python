@@ -1,8 +1,8 @@
 import struct
 from open_earable_python.scheme import SensorScheme, ParseType
 import pandas as pd
-from typing import BinaryIO, Dict, List, Optional
-from dataclasses import dataclass
+from typing import BinaryIO, Dict, List, Optional, TypedDict
+from dataclasses import dataclass, field
 import numpy as np
 
 class PayloadParser:
@@ -34,6 +34,11 @@ class PayloadParser:
 
 # MARK: - ParseResult dataclass
 
+class MicPacket(TypedDict):
+    timestamp: float
+    samples: tuple[int, ...]
+
+
 @dataclass
 class ParseResult:
     """Result of parsing a stream.
@@ -45,6 +50,7 @@ class ParseResult:
 
     sensor_dfs: Dict[int, pd.DataFrame]
     mic_samples: List[int]
+    mic_packets: List[MicPacket] = field(default_factory=list)
     audio_stereo: Optional[np.ndarray] = None
 
     @staticmethod
@@ -115,6 +121,7 @@ class Parser:
         buffer = bytearray()
         packet_idx = 0
         mic_samples: List[int] = []
+        mic_packets: List[MicPacket] = []
 
         def flush_to_dataframes() -> Dict[int, pd.DataFrame]:
             result: Dict[int, pd.DataFrame] = {}
@@ -199,6 +206,10 @@ class Parser:
                             continue
                         # `samples` is a tuple of int16; extend global list
                         mic_samples.extend(list(samples))
+                        mic_packets.append({
+                            "timestamp": timestamp_s,
+                            "samples": samples,
+                        })
                 if self.verbose:
                     if isinstance(parser, MicPayloadParser):
                         print(
@@ -249,7 +260,12 @@ class Parser:
 
         sensor_dfs = flush_to_dataframes()
         audio_stereo = ParseResult.mic_samples_to_stereo(mic_samples)
-        return ParseResult(sensor_dfs=sensor_dfs, mic_samples=mic_samples, audio_stereo=audio_stereo)
+        return ParseResult(
+            sensor_dfs=sensor_dfs,
+            mic_samples=mic_samples,
+            mic_packets=mic_packets,
+            audio_stereo=audio_stereo,
+        )
 
     def _parse_header(self, header: bytes) -> tuple[int, int, int]:
         """Parse a 10-byte packet header into (sid, size, time)."""

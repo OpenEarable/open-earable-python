@@ -102,3 +102,11 @@ print(first.list_sensors())
 ### Audio utilities
 - `play_audio(sampling_rate=48000)`: play stereo microphone data in a Jupyter environment.
 - `save_audio(path, sampling_rate=48000)`: export microphone audio to WAV.
+- `get_audio_dataframe(sampling_rate=48000)`: return microphone PCM as a timestamp-indexed DataFrame (`mic.inner`, `mic.outer`).
+
+Example:
+
+```python
+audio_df = recording.get_audio_dataframe()
+print(audio_df.head())
+```
