@@ -132,7 +132,10 @@ class SensorDataset:
     def __init__(self, filename: str, verbose: bool = False):
         self.filename = filename
         self.verbose = verbose
-        self.parse_result: Dict[int, List] = defaultdict(list)
+        self.parse_result: parser.ParseResult = parser.ParseResult(
+            sensor_dfs={},
+            mic_samples=[],
+        )
         # Per-SID dataframes built in _build_accessors
         self.sensor_dfs: Dict[int, pd.DataFrame] = {}
         self.audio_stereo: Optional[np.ndarray] = None
@@ -141,100 +144,30 @@ class SensorDataset:
         self.bone_sound: Optional[np.ndarray] = None
         self.df: pd.DataFrame = pd.DataFrame()
 
-        self.imu = _SensorAccessor(pd.DataFrame(columns=LABELS["imu"]), LABELS["imu"])
-        self.barometer = _SensorAccessor(pd.DataFrame(columns=LABELS["barometer"]), LABELS["barometer"])
-        self.ppg = _SensorAccessor(pd.DataFrame(columns=LABELS["ppg"]), LABELS["ppg"])
-        self.bone_acc = _SensorAccessor(pd.DataFrame(columns=LABELS["bone_acc"]), LABELS["bone_acc"])
-        self.optical_temp = _SensorAccessor(pd.DataFrame(columns=LABELS["optical_temp"]), LABELS["optical_temp"])
-        self.microphone = _SensorAccessor(pd.DataFrame(columns=LABELS["microphone"]), LABELS["microphone"])
+        for sensor_name, labels in LABELS.items():
+            setattr(
+                self,
+                sensor_name,
+                _SensorAccessor(pd.DataFrame(columns=labels), labels),
+            )
 
-        self.parser: parser.Parser = parser.Parser({
-            self.SENSOR_SID["imu"]: parser.SchemePayloadParser(scheme.SensorScheme(
-                name='imu',
-                sid=self.SENSOR_SID["imu"],
-                groups=[
-                    scheme.SensorComponentGroupScheme(
-                        name='acc',
-                        components=[
-                            scheme.SensorComponentScheme('x', scheme.ParseType.FLOAT),
-                            scheme.SensorComponentScheme('y', scheme.ParseType.FLOAT),
-                            scheme.SensorComponentScheme('z', scheme.ParseType.FLOAT),
-                        ]
-                    ),
-                    scheme.SensorComponentGroupScheme(
-                        name='gyro',
-                        components=[
-                            scheme.SensorComponentScheme('x', scheme.ParseType.FLOAT),
-                            scheme.SensorComponentScheme('y', scheme.ParseType.FLOAT),
-                            scheme.SensorComponentScheme('z', scheme.ParseType.FLOAT),
-                        ]
-                    ),
-                    scheme.SensorComponentGroupScheme(
-                        name='mag',
-                        components=[
-                            scheme.SensorComponentScheme('x', scheme.ParseType.FLOAT),
-                            scheme.SensorComponentScheme('y', scheme.ParseType.FLOAT),
-                            scheme.SensorComponentScheme('z', scheme.ParseType.FLOAT),
-                        ]
-                    ),
-                ])),
-            self.SENSOR_SID["barometer"]: parser.SchemePayloadParser(scheme.SensorScheme(
-                name='barometer',
-                sid=self.SENSOR_SID["barometer"],
-                groups=[
-                    scheme.SensorComponentGroupScheme(
-                        name='barometer',
-                        components=[
-                            scheme.SensorComponentScheme('temperature', scheme.ParseType.FLOAT),
-                            scheme.SensorComponentScheme('pressure', scheme.ParseType.FLOAT),
-                        ]
-                    ),
-                ])),
-            self.SENSOR_SID["ppg"]: parser.SchemePayloadParser(scheme.SensorScheme(
-                name='ppg',
-                sid=self.SENSOR_SID["ppg"],
-                groups=[
-                    scheme.SensorComponentGroupScheme(
-                        name='ppg',
-                        components=[
-                            scheme.SensorComponentScheme('red', scheme.ParseType.UINT32),
-                            scheme.SensorComponentScheme('ir', scheme.ParseType.UINT32),
-                            scheme.SensorComponentScheme('green', scheme.ParseType.UINT32),
-                            scheme.SensorComponentScheme('ambient', scheme.ParseType.UINT32),
-                        ]
-                    ),
-                ])),
-            self.SENSOR_SID["optical_temp"]: parser.SchemePayloadParser(scheme.SensorScheme(
-                name='optical_temp',
-                sid=self.SENSOR_SID["optical_temp"],
-                groups=[
-                    scheme.SensorComponentGroupScheme(
-                        name='optical_temp',
-                        components=[
-                            scheme.SensorComponentScheme('optical_temp', scheme.ParseType.FLOAT),
-                        ]
-                    ),
-                ])),
-            self.SENSOR_SID["bone_acc"]: parser.SchemePayloadParser(scheme.SensorScheme(
-                name='bone_acc',
-                sid=self.SENSOR_SID["bone_acc"],
-                groups=[
-                    scheme.SensorComponentGroupScheme(
-                        name='bone_acc',
-                        components=[
-                            scheme.SensorComponentScheme('x', scheme.ParseType.INT16),
-                            scheme.SensorComponentScheme('y', scheme.ParseType.INT16),
-                            scheme.SensorComponentScheme('z', scheme.ParseType.INT16),
-                        ]
-                    ),
-                ])),
-            self.SENSOR_SID["microphone"]: parser.MicPayloadParser(
-                sample_count=48000,
-            ),
-        }, verbose=verbose)
+        self.parser: parser.Parser = self._build_parser(verbose=verbose)
 
         self.parse()
         self._build_accessors()
+
+    @classmethod
+    def _build_parser(cls, verbose: bool = False) -> parser.Parser:
+        sensor_schemes = scheme.build_default_sensor_schemes(cls.SENSOR_SID)
+        dataset_parser = parser.Parser.from_sensor_schemes(
+            sensor_schemes=sensor_schemes,
+            verbose=verbose,
+        )
+        dataset_parser.parsers[cls.SENSOR_SID["microphone"]] = parser.MicPayloadParser(
+            sample_count=48000,
+            verbose=verbose,
+        )
+        return dataset_parser
 
     def parse(self) -> None:
         """Parse the binary recording file into structured sensor data."""
@@ -252,10 +185,11 @@ class SensorDataset:
         self.audio_stereo = self.parse_result.audio_stereo
         self.audio_df = pd.DataFrame()
         self._audio_df_sampling_rate = None
+        self.sensor_dfs = {}
 
         data_dict = self.parse_result.sensor_dfs
         for name, sid in self.SENSOR_SID.items():
-            labels = LABELS.get(name, [f"val{i}" for i in range(0)])
+            labels = LABELS.get(name, [])
             if name == "microphone":
                 df = self.get_audio_dataframe()
             elif sid in data_dict and isinstance(data_dict[sid], pd.DataFrame):
@@ -348,10 +282,7 @@ class SensorDataset:
         if sampling_rate <= 0:
             raise ValueError(f"sampling_rate must be > 0, got {sampling_rate}")
 
-        if (
-            self._audio_df_sampling_rate == sampling_rate
-            and not self.audio_df.empty
-        ):
+        if self._audio_df_sampling_rate == sampling_rate:
             return self.audio_df
 
         mic_packets = getattr(self.parse_result, "mic_packets", [])
@@ -362,27 +293,17 @@ class SensorDataset:
             return self.audio_df
 
         timestamps: List[np.ndarray] = []
-        inner_values: List[np.ndarray] = []
-        outer_values: List[np.ndarray] = []
+        stereo_frames: List[np.ndarray] = []
 
         for packet in mic_packets:
-            samples = np.asarray(packet["samples"], dtype=np.int16)
-            if samples.size < 2:
+            ts, stereo = parser.mic_packet_to_stereo_frames(
+                packet=packet,
+                sampling_rate=sampling_rate,
+            )
+            if stereo.size == 0:
                 continue
-
-            # Interleaved stream: [outer0, inner0, outer1, inner1, ...]
-            frame_count = samples.size // 2
-            trimmed = samples[: frame_count * 2]
-
-            outer = trimmed[0::2]
-            inner = trimmed[1::2]
-
-            start_ts = float(packet["timestamp"])
-            ts = start_ts + (np.arange(frame_count, dtype=np.float64) / sampling_rate)
-
             timestamps.append(ts)
-            inner_values.append(inner)
-            outer_values.append(outer)
+            stereo_frames.append(stereo)
 
         if not timestamps:
             self.audio_df = pd.DataFrame(columns=["mic.inner", "mic.outer"])
@@ -391,13 +312,12 @@ class SensorDataset:
             return self.audio_df
 
         all_ts = np.concatenate(timestamps)
-        all_inner = np.concatenate(inner_values)
-        all_outer = np.concatenate(outer_values)
+        all_stereo = np.vstack(stereo_frames)
 
         self.audio_df = pd.DataFrame(
             {
-                "mic.inner": all_inner,
-                "mic.outer": all_outer,
+                "mic.inner": all_stereo[:, 0],
+                "mic.outer": all_stereo[:, 1],
             },
             index=all_ts,
         )
