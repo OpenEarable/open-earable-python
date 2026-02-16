@@ -1,9 +1,23 @@
 import struct
 from open_earable_python.scheme import SensorScheme, ParseType
 import pandas as pd
-from typing import BinaryIO, Dict, List, Optional, TypedDict
+from typing import BinaryIO, Dict, List, Optional, Tuple, TypedDict, Union
 from dataclasses import dataclass, field
 import numpy as np
+
+
+def interleaved_mic_to_stereo(
+    samples: Union[np.ndarray, List[int], tuple[int, ...]],
+) -> np.ndarray:
+    """Convert interleaved [outer, inner, ...] int16 samples to [inner, outer] frames."""
+    interleaved = np.asarray(samples, dtype=np.int16)
+    if interleaved.size < 2:
+        return np.empty((0, 2), dtype=np.int16)
+
+    frame_count = interleaved.size // 2
+    interleaved = interleaved[: frame_count * 2]
+    return np.column_stack((interleaved[1::2], interleaved[0::2]))
+
 
 class PayloadParser:
     """Abstract base class for payload parsers.
@@ -57,12 +71,28 @@ class ParseResult:
     def mic_samples_to_stereo(mic_samples: List[int]) -> Optional[np.ndarray]:
         if not mic_samples:
             return None
-        mic_array = np.array(mic_samples, dtype=np.int16)
-        # If odd number of samples, drop the last one to ensure even pairing
-        if len(mic_array) % 2 != 0:
-            mic_array = mic_array[:-1]
-        # Original behavior: [inner, outer] = [odd, even]
-        return np.column_stack((mic_array[1::2], mic_array[0::2]))
+        stereo = interleaved_mic_to_stereo(mic_samples)
+        if stereo.size == 0:
+            return None
+        return stereo
+
+
+def mic_packet_to_stereo_frames(
+    packet: MicPacket,
+    sampling_rate: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Return timestamps and stereo frames for a parsed microphone packet."""
+    if sampling_rate <= 0:
+        raise ValueError(f"sampling_rate must be > 0, got {sampling_rate}")
+
+    stereo = interleaved_mic_to_stereo(packet["samples"])
+    if stereo.size == 0:
+        return np.empty((0,), dtype=np.float64), stereo
+
+    timestamps = float(packet["timestamp"]) + (
+        np.arange(stereo.shape[0], dtype=np.float64) / sampling_rate
+    )
+    return timestamps, stereo
 
 class Parser:
     def __init__(self, parsers: dict[int, PayloadParser], verbose: bool = False):
