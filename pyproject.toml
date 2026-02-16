@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=80", "setuptools-scm[toml]>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "open-earable-python"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Reader and utilities for multi-sensor OpenEarable recordings."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -33,3 +33,9 @@ dependencies = [
 [project.urls]
 Source = "https://github.com/OpenEarable/open-earable-python"
 Issues = "https://github.com/OpenEarable/open-earable-python/issues"
+
+[tool.setuptools_scm]
+tag_regex = "^v(?P<version>\\d+\\.\\d+\\.\\d+)$"
+version_scheme = "no-guess-dev"
+local_scheme = "no-local-version"
+fallback_version = "0.0.0"
