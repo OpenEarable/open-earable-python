@@ -35,7 +35,6 @@ Source = "https://github.com/OpenEarable/open-earable-python"
 Issues = "https://github.com/OpenEarable/open-earable-python/issues"
 
 [tool.setuptools_scm]
-tag_regex = "^v(?P<version>\\d+\\.\\d+\\.\\d+)$"
 version_scheme = "no-guess-dev"
 local_scheme = "no-local-version"
 fallback_version = "0.0.0"
