@@ -5,8 +5,8 @@ from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
-from open_earable_python import parser
-import open_earable_python.scheme as scheme
+from open_wearables import parser
+import open_wearables.scheme as scheme
 from IPython.display import Audio, display
 from scipy.io.wavfile import write
 

@@ -1,5 +1,5 @@
 import struct
-from open_earable_python.scheme import SensorScheme, ParseType
+from open_wearables.scheme import SensorScheme, ParseType
 import pandas as pd
 from typing import BinaryIO, Dict, List, Optional, Tuple, TypedDict, Union
 from dataclasses import dataclass, field
