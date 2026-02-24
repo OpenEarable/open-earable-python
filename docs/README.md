@@ -1,6 +1,6 @@
-# Open Earable Python Documentation
+# Open Wearable Documentation
 
-`open-earable-python` parses `.oe` recordings into pandas DataFrames and exposes convenient accessors for OpenEarable sensor streams.
+`open-wearables` parses `.oe` recordings into pandas DataFrames and exposes convenient accessors for OpenEarable sensor streams.
 
 ## Contents
 

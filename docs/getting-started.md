@@ -8,7 +8,7 @@
 ## Installation
 
 ```bash
-pip install open-earable-python
+pip install open-wearables
 ```
 
 From source:
@@ -24,7 +24,7 @@ pip install -e .
 ## Load a Recording
 
 ```python
-from open_earable_python import SensorDataset
+from open_wearables import SensorDataset
 
 dataset = SensorDataset("my_recording.oe")
 ```
@@ -88,7 +88,7 @@ dataset.save_csv("recording.csv")
 ## Load Multiple Files
 
 ```python
-from open_earable_python import load_recordings
+from open_wearables import load_recordings
 
 recordings = load_recordings(["session1.oe", "session2.oe"])
 for rec in recordings:
