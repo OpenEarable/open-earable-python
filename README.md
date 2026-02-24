@@ -1,11 +1,11 @@
-# Open Earable Python
+# Open Wearable
 
 Python toolkit for parsing and analyzing multi-sensor OpenEarable recordings.
 
 ## Installation
 
 ```bash
-pip install open-earable-python
+pip install open-wearable
 ```
 
 For local development:
@@ -21,7 +21,7 @@ pip install -e .
 ## Quick Example
 
 ```python
-from open_earable_python import SensorDataset
+from open_wearable import SensorDataset
 
 dataset = SensorDataset("recording.oe")
 
