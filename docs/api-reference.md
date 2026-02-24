@@ -1,6 +1,16 @@
 # API Reference
 
+> [!WARNING]
+> `open-earable-python` is deprecated and renamed to **`open-wearable`**.
+> Prefer importing from `open_wearable`.
+
 ## Package Exports
+
+```python
+from open_wearable import SensorDataset, load_recordings
+```
+
+Legacy import path (deprecated):
 
 ```python
 from open_earable_python import SensorDataset, load_recordings
@@ -102,7 +112,7 @@ load_recordings(file_paths: Sequence[str]) -> List[SensorDataset]
 
 Creates `SensorDataset` objects for existing files only.
 
-## Parser Module (`open_earable_python.parser`)
+## Parser Module (`open_wearable.parser`)
 
 Core classes and helpers for decoding binary packets:
 
@@ -114,7 +124,7 @@ Core classes and helpers for decoding binary packets:
 - `interleaved_mic_to_stereo(samples)`: converts interleaved samples to stereo.
 - `mic_packet_to_stereo_frames(packet, sampling_rate)`: timestamp + stereo frame conversion.
 
-## Scheme Module (`open_earable_python.scheme`)
+## Scheme Module (`open_wearable.scheme`)
 
 Defines sensor schema primitives:
 

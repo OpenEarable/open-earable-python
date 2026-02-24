@@ -1,5 +1,9 @@
 # Data Model and Sensor Channels
 
+> [!WARNING]
+> `open-earable-python` is deprecated and renamed to **`open-wearable`**.
+> Migration guide: [migration-to-open-wearable.md](migration-to-open-wearable.md).
+
 ## Time Index
 
 All sensor DataFrames are indexed by `timestamp` in seconds (`float`), derived from packet timestamps in microseconds.

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "open-earable-python"
 dynamic = ["version"]
-description = "Reader and utilities for multi-sensor OpenEarable recordings."
+description = "DEPRECATED: renamed to open-wearable. Reader and utilities for multi-sensor OpenEarable recordings."
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
@@ -13,7 +13,7 @@ license-files = ["LICEN[CS]E*"]
 authors = [
   { name = "Karlsruhe Institut of Technology (KIT)", email = "open-earable@lists.kit.edu" }
 ]
-keywords = ["openearable", "earable", "sensors", "imu", "ppg", "audio", "wearables", ".oe"]
+keywords = ["openearable", "open-wearable", "earable", "sensors", "imu", "ppg", "audio", "wearables", ".oe", "deprecated"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Development Status :: 4 - Beta",
@@ -33,6 +33,8 @@ dependencies = [
 [project.urls]
 Source = "https://github.com/OpenEarable/open-earable-python"
 Issues = "https://github.com/OpenEarable/open-earable-python/issues"
+"Migration Guide" = "https://github.com/OpenEarable/open-earable-python/blob/main/docs/migration-to-open-wearable.md"
+"New Package (PyPI)" = "https://pypi.org/project/open-wearable/"
 
 [tool.setuptools_scm]
 version_scheme = "no-guess-dev"

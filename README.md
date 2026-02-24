@@ -1,8 +1,22 @@
 # Open Earable Python
 
+> [!WARNING]
+> `open-earable-python` is deprecated and has been renamed to **`open-wearable`**.
+> Migrate now:
+> - Install: `pip install open-wearable`
+> - Update imports: `from open_earable_python import ...` -> `from open_wearable import ...`
+> - Deprecation timeline: this package receives only critical fixes until **December 31, 2026**.
+> - Migration guide: [docs/migration-to-open-wearable.md](docs/migration-to-open-wearable.md)
+
 Python toolkit for parsing and analyzing multi-sensor OpenEarable recordings.
 
 ## Installation
+
+```bash
+pip install open-wearable
+```
+
+Legacy package (deprecated):
 
 ```bash
 pip install open-earable-python
@@ -21,7 +35,7 @@ pip install -e .
 ## Quick Example
 
 ```python
-from open_earable_python import SensorDataset
+from open_wearable import SensorDataset
 
 dataset = SensorDataset("recording.oe")
 
@@ -40,6 +54,7 @@ audio_df = dataset.get_audio_dataframe()
 - [Getting started](docs/getting-started.md)
 - [Data model and sensor channels](docs/data-model.md)
 - [API reference](docs/api-reference.md)
+- [Migration to open-wearable](docs/migration-to-open-wearable.md)
 
 ## License
 
