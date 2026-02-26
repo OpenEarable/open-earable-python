@@ -5,7 +5,7 @@ import inspect
 import itertools
 import json
 from collections import defaultdict
-from typing import Any, Awaitable, Callable, Dict, Optional, Set
+from typing import Any, Awaitable, Callable, Dict, Literal, Optional, Set, Union
 
 from websockets import ConnectionClosed
 from websockets.client import WebSocketClientProtocol, connect
@@ -16,9 +16,33 @@ from .errors import (
     IPCRemoteError,
     IPCStreamError,
 )
-from .models import StreamEvent
+from .models import (
+    DiscoveredDevice,
+    SensorConfiguration,
+    SensorInfo,
+    StreamEvent,
+    WearableSummary,
+)
 
 EventCallback = Callable[[dict[str, Any]], Optional[Awaitable[None]]]
+ActionName = Literal[
+    "disconnect",
+    "synchronize_time",
+    "list_sensors",
+    "list_sensor_configurations",
+    "set_sensor_configuration",
+]
+AnyActionName = Union[ActionName, str]
+StreamName = Literal[
+    "sensor_values",
+    "sensor_configuration",
+    "button_events",
+    "battery_percentage",
+    "battery_power_status",
+    "battery_health_status",
+    "battery_energy_status",
+]
+AnyStreamName = Union[StreamName, str]
 
 
 class _StreamEnd:
@@ -66,6 +90,131 @@ class StreamSubscription:
 
         self._closed = True
         return await self._client.unsubscribe(self.subscription_id)
+
+
+class WearableActions:
+    """Typed ergonomic action wrappers for one wearable device."""
+
+    def __init__(self, client: "OpenWearableIPCClient", device_id: str) -> None:
+        self._client = client
+        self._device_id = device_id
+
+    async def disconnect(self) -> Any:
+        return await self._client.invoke_action(self._device_id, "disconnect")
+
+    async def synchronize_time(self) -> Any:
+        return await self._client.invoke_action(self._device_id, "synchronize_time")
+
+    async def list_sensors(self) -> list[SensorInfo]:
+        return await self._client.list_sensors(self._device_id)
+
+    async def list_sensor_configurations(self) -> list[SensorConfiguration]:
+        return await self._client.list_sensor_configurations(self._device_id)
+
+    async def set_sensor_configuration(
+        self,
+        configuration_name: str,
+        value_key: str,
+    ) -> Any:
+        return await self._client.set_sensor_configuration(
+            self._device_id,
+            configuration_name=configuration_name,
+            value_key=value_key,
+        )
+
+
+class WearableStreams:
+    """Typed stream subscription wrappers for one wearable device."""
+
+    def __init__(self, client: "OpenWearableIPCClient", device_id: str) -> None:
+        self._client = client
+        self._device_id = device_id
+
+    async def sensor_values(
+        self,
+        *,
+        sensor_id: Optional[str] = None,
+        sensor_index: Optional[int] = None,
+        sensor_name: Optional[str] = None,
+    ) -> StreamSubscription:
+        stream_selectors = [
+            sensor_id is not None,
+            sensor_index is not None,
+            sensor_name is not None,
+        ]
+        if sum(stream_selectors) != 1:
+            raise ValueError(
+                "Provide exactly one of sensor_id, sensor_index, or sensor_name."
+            )
+
+        args: dict[str, Any] = {}
+        if sensor_id is not None:
+            args["sensor_id"] = sensor_id
+        if sensor_index is not None:
+            args["sensor_index"] = sensor_index
+        if sensor_name is not None:
+            args["sensor_name"] = sensor_name
+
+        return await self._client.subscribe(
+            device_id=self._device_id,
+            stream="sensor_values",
+            args=args,
+        )
+
+    async def sensor_configuration(self) -> StreamSubscription:
+        return await self._client.subscribe(
+            device_id=self._device_id,
+            stream="sensor_configuration",
+        )
+
+    async def button_events(self) -> StreamSubscription:
+        return await self._client.subscribe(
+            device_id=self._device_id,
+            stream="button_events",
+        )
+
+    async def battery_percentage(self) -> StreamSubscription:
+        return await self._client.subscribe(
+            device_id=self._device_id,
+            stream="battery_percentage",
+        )
+
+    async def battery_power_status(self) -> StreamSubscription:
+        return await self._client.subscribe(
+            device_id=self._device_id,
+            stream="battery_power_status",
+        )
+
+    async def battery_health_status(self) -> StreamSubscription:
+        return await self._client.subscribe(
+            device_id=self._device_id,
+            stream="battery_health_status",
+        )
+
+    async def battery_energy_status(self) -> StreamSubscription:
+        return await self._client.subscribe(
+            device_id=self._device_id,
+            stream="battery_energy_status",
+        )
+
+
+class Wearable:
+    """High-level handle for a specific wearable device ID."""
+
+    def __init__(self, client: "OpenWearableIPCClient", device_id: str) -> None:
+        self.client = client
+        self.device_id = device_id
+        self.actions = WearableActions(client=client, device_id=device_id)
+        self.streams = WearableStreams(client=client, device_id=device_id)
+
+    async def disconnect(self) -> dict[str, Any]:
+        return await self.client.disconnect(self.device_id)
+
+    async def connect(self, connected_via_system: bool = False) -> WearableSummary:
+        return await self.client.connect_device(
+            device_id=self.device_id,
+            connected_via_system=connected_via_system,
+        )
 
 
 class OpenWearableIPCClient:
@@ -210,33 +359,59 @@ class OpenWearableIPCClient:
             {"check_and_request_permissions": check_and_request_permissions},
         )
 
-    async def get_discovered_devices(self) -> list[dict[str, Any]]:
-        return await self.call("get_discovered_devices")
+    async def start_scan_async(
+        self,
+        check_and_request_permissions: bool = True,
+    ) -> dict[str, Any]:
+        return await self.call(
+            "start_scan_async",
+            {"check_and_request_permissions": check_and_request_permissions},
+        )
+
+    async def start_scan_stream(
+        self,
+        check_and_request_permissions: bool = True,
+    ) -> StreamSubscription:
+        result = await self.start_scan_async(
+            check_and_request_permissions=check_and_request_permissions
+        )
+        return self._build_stream_subscription(
+            result=result,
+            fallback_stream="scan",
+            fallback_device_id="scanner",
+        )
+
+    async def get_discovered_devices(self) -> list[DiscoveredDevice]:
+        payload = await self.call("get_discovered_devices")
+        return [DiscoveredDevice.from_payload(item) for item in payload]
 
     async def connect_device(
         self,
         device_id: str,
         connected_via_system: bool = False,
-    ) -> dict[str, Any]:
-        return await self.call(
+    ) -> WearableSummary:
+        payload = await self.call(
             "connect",
             {
                 "device_id": device_id,
                 "connected_via_system": connected_via_system,
             },
         )
+        return WearableSummary.from_payload(payload)
 
     async def connect_system_devices(
         self,
         ignored_device_ids: Optional[list[str]] = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[WearableSummary]:
         params: dict[str, Any] = {}
         if ignored_device_ids is not None:
             params["ignored_device_ids"] = ignored_device_ids
-        return await self.call("connect_system_devices", params)
+        payload = await self.call("connect_system_devices", params)
+        return [WearableSummary.from_payload(item) for item in payload]
 
-    async def list_connected(self) -> list[dict[str, Any]]:
-        return await self.call("list_connected")
+    async def list_connected(self) -> list[WearableSummary]:
+        payload = await self.call("list_connected")
+        return [WearableSummary.from_payload(item) for item in payload]
 
     async def disconnect(self, device_id: str) -> dict[str, Any]:
         return await self.call("disconnect", {"device_id": device_id})
@@ -253,7 +428,7 @@ class OpenWearableIPCClient:
     async def invoke_action(
         self,
         device_id: str,
-        action: str,
+        action: AnyActionName,
         args: Optional[dict[str, Any]] = None,
     ) -> Any:
         params: dict[str, Any] = {
@@ -264,10 +439,47 @@ class OpenWearableIPCClient:
             params["args"] = args
         return await self.call("invoke_action", params)
 
+    async def action_disconnect(self, device_id: str) -> Any:
+        return await self.invoke_action(device_id, "disconnect")
+
+    async def synchronize_time(self, device_id: str) -> Any:
+        return await self.invoke_action(device_id, "synchronize_time")
+
+    async def list_sensors(self, device_id: str) -> list[SensorInfo]:
+        payload = await self.invoke_action(device_id, "list_sensors")
+        return [SensorInfo.from_payload(item) for item in payload]
+
+    async def list_sensor_configurations(
+        self,
+        device_id: str,
+    ) -> list[SensorConfiguration]:
+        payload = await self.invoke_action(device_id, "list_sensor_configurations")
+        return [SensorConfiguration.from_payload(item) for item in payload]
+
+    async def set_sensor_configuration(
+        self,
+        device_id: str,
+        *,
+        configuration_name: str,
+        value_key: str,
+    ) -> Any:
+        return await self.invoke_action(
+            device_id=device_id,
+            action="set_sensor_configuration",
+            args={
+                "configuration_name": configuration_name,
+                "value_key": value_key,
+            },
+        )
+
+    def wearable(self, device_id: str) -> Wearable:
+        """Return a typed handle with `.actions` and `.streams` sugar."""
+        return Wearable(client=self, device_id=device_id)
+
     async def subscribe(
         self,
         device_id: str,
-        stream: str,
+        stream: AnyStreamName,
         args: Optional[dict[str, Any]] = None,
     ) -> StreamSubscription:
         params: dict[str, Any] = {
@@ -278,16 +490,10 @@ class OpenWearableIPCClient:
             params["args"] = args
 
         result = await self.call("subscribe", params)
-        subscription_id = int(result["subscription_id"])
-        queue: "asyncio.Queue[Any]" = asyncio.Queue(maxsize=self.subscription_queue_size)
-        self._subscriptions[subscription_id] = queue
-
-        return StreamSubscription(
-            client=self,
-            subscription_id=subscription_id,
-            stream=str(result.get("stream", stream)),
-            device_id=str(result.get("device_id", device_id)),
-            queue=queue,
+        return self._build_stream_subscription(
+            result=result,
+            fallback_stream=stream,
+            fallback_device_id=device_id,
         )
 
     async def unsubscribe(self, subscription_id: int) -> dict[str, Any]:
@@ -296,6 +502,25 @@ class OpenWearableIPCClient:
         if queue is not None:
             await queue.put(_STREAM_END)
         return result
+
+    def _build_stream_subscription(
+        self,
+        *,
+        result: dict[str, Any],
+        fallback_stream: str,
+        fallback_device_id: str,
+    ) -> StreamSubscription:
+        subscription_id = int(result["subscription_id"])
+        queue: "asyncio.Queue[Any]" = asyncio.Queue(maxsize=self.subscription_queue_size)
+        self._subscriptions[subscription_id] = queue
+
+        return StreamSubscription(
+            client=self,
+            subscription_id=subscription_id,
+            stream=str(result.get("stream", fallback_stream)),
+            device_id=str(result.get("device_id", fallback_device_id)),
+            queue=queue,
+        )
 
     async def _receiver_loop(self) -> None:
         ws = self._ws

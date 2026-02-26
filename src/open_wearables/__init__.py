@@ -1,16 +1,25 @@
 from .data import SensorDataset, load_recordings
 from .ipc import (
+    DiscoveredDevice,
     IPCClosedError,
     IPCError,
     IPCProtocolError,
     IPCRemoteError,
     IPCStreamError,
     OpenWearableIPCClient,
+    SensorConfiguration,
+    SensorConfigurationValue,
+    SensorInfo,
     StreamEvent,
     StreamSubscription,
+    Wearable,
+    WearableActions,
+    WearableStreams,
+    WearableSummary,
 )
 
 __all__ = [
+    "DiscoveredDevice",
     "IPCClosedError",
     "IPCError",
     "IPCProtocolError",
@@ -18,7 +27,14 @@ __all__ = [
     "IPCStreamError",
     "OpenWearableIPCClient",
     "SensorDataset",
+    "SensorConfiguration",
+    "SensorConfigurationValue",
+    "SensorInfo",
     "StreamEvent",
     "StreamSubscription",
+    "Wearable",
+    "WearableActions",
+    "WearableStreams",
+    "WearableSummary",
     "load_recordings",
 ]

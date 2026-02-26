@@ -34,6 +34,33 @@ ppg_red = dataset.ppg["ppg.red"]
 audio_df = dataset.get_audio_dataframe()
 ```
 
+## IPC WebSocket Example
+
+```python
+import asyncio
+from open_wearable import OpenWearableIPCClient
+
+
+async def main() -> None:
+    async with OpenWearableIPCClient() as client:
+        await client.start_scan()
+        devices = await client.get_discovered_devices()
+        wearable = client.wearable(devices[0].id)
+
+        await wearable.connect()
+        await wearable.actions.synchronize_time()
+
+        sensors = await wearable.actions.list_sensors()
+        stream = await wearable.streams.sensor_values(sensor_id=sensors[0].sensor_id)
+        async for event in stream:
+            print(event.data)
+            break
+        await stream.close()
+
+
+asyncio.run(main())
+```
+
 ## Documentation
 
 - [Documentation index](docs/README.md)
