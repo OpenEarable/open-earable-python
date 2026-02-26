@@ -33,7 +33,7 @@ class StreamSubscription:
 
     def __init__(
         self,
-        client: "OpenEarableIPCClient",
+        client: "OpenWearableIPCClient",
         subscription_id: int,
         stream: str,
         device_id: str,
@@ -423,7 +423,3 @@ class OpenWearableIPCClient:
                 queue = self._subscriptions.pop(subscription_id, None)
                 if queue is not None:
                     await queue.put(_STREAM_END)
-
-
-# Backward-compatible alias for older public API users.
-OpenEarableIPCClient = OpenWearableIPCClient
