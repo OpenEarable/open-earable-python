@@ -8,10 +8,67 @@ from open_wearables import SensorDataset, load_recordings
 
 Primary internal package layers:
 
-- `open_wearable.schema`
-- `open_wearable.parsing`
-- `open_wearable.data`
-- `open_wearable.ipc`
+- `open_wearables.schema`
+- `open_wearables.parsing`
+- `open_wearables.data`
+- `open_wearables.ipc`
+
+## IPC Client (`open_wearables.ipc`)
+
+`OpenWearableIPCClient` is an async JSON-RPC style client for
+`ws://127.0.0.1:8765/ws` by default.
+
+### Connection Lifecycle
+
+```python
+async with OpenWearableIPCClient() as client:
+    await client.ping()
+```
+
+### Discovery and Connection
+
+- `start_scan(check_and_request_permissions=True)`
+- `start_scan_async(check_and_request_permissions=True) -> dict`
+- `start_scan_stream(check_and_request_permissions=True) -> StreamSubscription`
+- `get_discovered_devices() -> list[DiscoveredDevice]`
+- `connect_device(device_id, connected_via_system=False) -> WearableSummary`
+- `connect_system_devices(ignored_device_ids=None) -> list[WearableSummary]`
+- `list_connected() -> list[WearableSummary]`
+- `disconnect(device_id)`
+
+### Action Sugar
+
+- `client.synchronize_time(device_id)`
+- `client.list_sensors(device_id) -> list[SensorInfo]`
+- `client.list_sensor_configurations(device_id) -> list[SensorConfiguration]`
+- `client.set_sensor_configuration(device_id, configuration_name=..., value_key=...)`
+
+Per-device handle:
+
+```python
+wearable = client.wearable(device_id)
+await wearable.connect()
+await wearable.actions.synchronize_time()
+```
+
+### Stream Sugar
+
+Use the typed stream helpers:
+
+```python
+stream = await wearable.streams.sensor_values(sensor_id="accelerometer_0")
+async for event in stream:
+    print(event.data)
+```
+
+Other helpers:
+
+- `wearable.streams.sensor_configuration()`
+- `wearable.streams.button_events()`
+- `wearable.streams.battery_percentage()`
+- `wearable.streams.battery_power_status()`
+- `wearable.streams.battery_health_status()`
+- `wearable.streams.battery_energy_status()`
 
 ## `SensorDataset`
 
