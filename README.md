@@ -41,6 +41,17 @@ audio_df = dataset.get_audio_dataframe()
 - [Data model and sensor channels](docs/data-model.md)
 - [API reference](docs/api-reference.md)
 
+## Package Architecture
+
+The library is organized into focused layers:
+
+- `open_wearable.schema`: sensor schema types and default schema builders.
+- `open_wearable.parsing`: stream parsing, payload parsers, and microphone helpers.
+- `open_wearable.data`: high-level dataset API (`SensorDataset`) and sensor accessors.
+- `open_wearable.ipc`: asynchronous WebSocket IPC client and protocol models.
+
+Legacy flat modules (`open_wearable.scheme`, `open_wearable.parser`, `open_wearable.dataset`) remain available as compatibility facades.
+
 ## License
 
 MIT. See `LICENSE`.
