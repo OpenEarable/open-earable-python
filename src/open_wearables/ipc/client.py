@@ -423,3 +423,7 @@ class OpenWearableIPCClient:
                 queue = self._subscriptions.pop(subscription_id, None)
                 if queue is not None:
                     await queue.put(_STREAM_END)
+
+
+# Backward-compatible alias for older public API users.
+OpenEarableIPCClient = OpenWearableIPCClient
