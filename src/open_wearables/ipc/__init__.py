@@ -1,17 +1,12 @@
-from .dataset import (
-    SensorDataset,
-    load_recordings,
-)
-from .ipc import (
+from .client import OpenEarableIPCClient, StreamSubscription
+from .errors import (
     IPCClosedError,
     IPCError,
     IPCProtocolError,
     IPCRemoteError,
     IPCStreamError,
-    OpenEarableIPCClient,
-    StreamEvent,
-    StreamSubscription,
 )
+from .models import StreamEvent
 
 __all__ = [
     "IPCClosedError",
@@ -20,8 +15,6 @@ __all__ = [
     "IPCRemoteError",
     "IPCStreamError",
     "OpenEarableIPCClient",
-    "SensorDataset",
     "StreamEvent",
     "StreamSubscription",
-    "load_recordings",
 ]

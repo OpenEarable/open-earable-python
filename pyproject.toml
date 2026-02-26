@@ -28,6 +28,7 @@ dependencies = [
   "pandas",
   "ipython",
   "scipy",
+  "websockets",
 ]
 
 [project.urls]
