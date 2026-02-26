@@ -1,14 +1,9 @@
-"""Backward-compatible schema module.
-
-Prefer imports from ``open_wearable.schema`` for the layered architecture.
-"""
-
-from .schema import (
+from .defaults import build_default_sensor_schemes
+from .types import (
     ParseType,
     SensorComponentGroupScheme,
     SensorComponentScheme,
     SensorScheme,
-    build_default_sensor_schemes,
 )
 
 __all__ = [

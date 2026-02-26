@@ -6,6 +6,13 @@
 from open_wearables import SensorDataset, load_recordings
 ```
 
+Primary internal package layers:
+
+- `open_wearable.schema`
+- `open_wearable.parsing`
+- `open_wearable.data`
+- `open_wearable.ipc`
+
 ## `SensorDataset`
 
 High-level API for loading and analyzing a single `.oe` recording.
@@ -114,6 +121,9 @@ Core classes and helpers for decoding binary packets:
 - `interleaved_mic_to_stereo(samples)`: converts interleaved samples to stereo.
 - `mic_packet_to_stereo_frames(packet, sampling_rate)`: timestamp + stereo frame conversion.
 
+Note: `open_wearables.parser` is a compatibility facade. New code should prefer
+`open_wearables.parsing`.
+
 ## Scheme Module (`open_wearables.scheme`)
 
 Defines sensor schema primitives:
@@ -123,3 +133,6 @@ Defines sensor schema primitives:
 - `SensorComponentGroupScheme`
 - `SensorScheme`
 - `build_default_sensor_schemes(sensor_sid)`
+
+Note: `open_wearables.scheme` is a compatibility facade. New code should prefer
+`open_wearables.schema`.

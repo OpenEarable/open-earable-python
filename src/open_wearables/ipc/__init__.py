@@ -1,4 +1,4 @@
-from .client import OpenEarableIPCClient, StreamSubscription
+from .client import OpenWearableIPCClient, StreamSubscription
 from .errors import (
     IPCClosedError,
     IPCError,
@@ -14,7 +14,7 @@ __all__ = [
     "IPCProtocolError",
     "IPCRemoteError",
     "IPCStreamError",
-    "OpenEarableIPCClient",
+    "OpenWearableIPCClient",
     "StreamEvent",
     "StreamSubscription",
 ]

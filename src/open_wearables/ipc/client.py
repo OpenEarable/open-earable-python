@@ -68,8 +68,8 @@ class StreamSubscription:
         return await self._client.unsubscribe(self.subscription_id)
 
 
-class OpenEarableIPCClient:
-    """Async client for OpenEarable WebSocket IPC daemon."""
+class OpenWearableIPCClient:
+    """Async client for OpenWearable WebSocket IPC daemon."""
 
     def __init__(
         self,
@@ -89,7 +89,7 @@ class OpenEarableIPCClient:
         self._subscriptions: Dict[int, "asyncio.Queue[Any]"] = {}
         self._waiters: Set["asyncio.Future[dict[str, Any]]"] = set()
 
-    async def __aenter__(self) -> "OpenEarableIPCClient":
+    async def __aenter__(self) -> "OpenWearableIPCClient":
         await self.connect()
         return self
 
