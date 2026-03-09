@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import inspect
 import itertools
 import json
+from pathlib import Path
 from collections import defaultdict
 from typing import Any, Awaitable, Callable, Dict, Literal, Optional, Set, Union
 
@@ -217,6 +219,123 @@ class Wearable:
         )
 
 
+class AudioStreamSession:
+    """Context-managed chunked audio playback session."""
+
+    def __init__(
+        self,
+        client: "OpenWearableIPCClient",
+        volume: Optional[float] = None,
+    ) -> None:
+        self._client = client
+        self._volume = volume
+        self._started = False
+
+    async def __aenter__(self) -> "AudioStreamSession":
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.stop()
+
+    async def start(self) -> dict[str, Any]:
+        result = await self._client.start_audio_stream(volume=self._volume)
+        self._started = True
+        return result
+
+    async def push(self, audio_chunk: bytes) -> dict[str, Any]:
+        if not self._started:
+            await self.start()
+        return await self._client.push_audio_stream_chunk_bytes(audio_chunk)
+
+    async def push_base64(self, audio_base64: str) -> dict[str, Any]:
+        if not self._started:
+            await self.start()
+        return await self._client.push_audio_stream_chunk(audio_base64=audio_base64)
+
+    async def push_file(self, file_path: Union[str, Path]) -> dict[str, Any]:
+        if not self._started:
+            await self.start()
+        return await self._client.push_audio_stream_chunk_file(file_path)
+
+    async def stop(self) -> dict[str, Any]:
+        if not self._started:
+            return {"stopped": True}
+        self._started = False
+        return await self._client.stop_audio_stream()
+
+
+class AudioController:
+    """High-level audio helpers for sound storage/playback and chunk streaming."""
+
+    def __init__(self, client: "OpenWearableIPCClient") -> None:
+        self._client = client
+
+    async def store_sound(
+        self,
+        sound_id: str,
+        audio_bytes: bytes,
+        *,
+        codec: Optional[str] = None,
+        sample_rate: Optional[int] = None,
+        num_channels: Optional[int] = None,
+        interleaved: Optional[bool] = None,
+        buffer_size: Optional[int] = None,
+    ) -> dict[str, Any]:
+        return await self._client.store_sound_bytes(
+            sound_id=sound_id,
+            audio_bytes=audio_bytes,
+            codec=codec,
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+            interleaved=interleaved,
+            buffer_size=buffer_size,
+        )
+
+    async def store_sound_file(
+        self,
+        sound_id: str,
+        file_path: Union[str, Path],
+        *,
+        codec: Optional[str] = None,
+        sample_rate: Optional[int] = None,
+        num_channels: Optional[int] = None,
+        interleaved: Optional[bool] = None,
+        buffer_size: Optional[int] = None,
+    ) -> dict[str, Any]:
+        return await self._client.store_sound_file(
+            sound_id=sound_id,
+            file_path=file_path,
+            codec=codec,
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+            interleaved=interleaved,
+            buffer_size=buffer_size,
+        )
+
+    async def play_sound(
+        self,
+        sound_id: Optional[str] = None,
+        *,
+        url: Optional[str] = None,
+        volume: Optional[float] = None,
+        codec: Optional[str] = None,
+        sample_rate: Optional[int] = None,
+        num_channels: Optional[int] = None,
+    ) -> dict[str, Any]:
+        return await self._client.play_sound(
+            sound_id=sound_id,
+            url=url,
+            volume=volume,
+            codec=codec,
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+        )
+
+    def stream(self, volume: Optional[float] = None) -> AudioStreamSession:
+        return AudioStreamSession(client=self._client, volume=volume)
+
+
 class OpenWearableIPCClient:
     """Async client for OpenWearable WebSocket IPC daemon."""
 
@@ -237,6 +356,7 @@ class OpenWearableIPCClient:
         self._callbacks: Dict[str, Set[EventCallback]] = defaultdict(set)
         self._subscriptions: Dict[int, "asyncio.Queue[Any]"] = {}
         self._waiters: Set["asyncio.Future[dict[str, Any]]"] = set()
+        self.audio = AudioController(self)
 
     async def __aenter__(self) -> "OpenWearableIPCClient":
         await self.connect()
@@ -415,6 +535,134 @@ class OpenWearableIPCClient:
 
     async def disconnect(self, device_id: str) -> dict[str, Any]:
         return await self.call("disconnect", {"device_id": device_id})
+
+    async def store_sound(
+        self,
+        sound_id: str,
+        audio_base64: str,
+        *,
+        codec: Optional[str] = None,
+        sample_rate: Optional[int] = None,
+        num_channels: Optional[int] = None,
+        interleaved: Optional[bool] = None,
+        buffer_size: Optional[int] = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "sound_id": sound_id,
+            "audio_base64": audio_base64,
+        }
+        if codec is not None:
+            params["codec"] = codec
+        if sample_rate is not None:
+            params["sample_rate"] = sample_rate
+        if num_channels is not None:
+            params["num_channels"] = num_channels
+        if interleaved is not None:
+            params["interleaved"] = interleaved
+        if buffer_size is not None:
+            params["buffer_size"] = buffer_size
+        return await self.call("store_sound", params)
+
+    async def store_sound_bytes(
+        self,
+        sound_id: str,
+        audio_bytes: bytes,
+        *,
+        codec: Optional[str] = None,
+        sample_rate: Optional[int] = None,
+        num_channels: Optional[int] = None,
+        interleaved: Optional[bool] = None,
+        buffer_size: Optional[int] = None,
+    ) -> dict[str, Any]:
+        audio_base64 = base64.b64encode(audio_bytes).decode("ascii")
+        return await self.store_sound(
+            sound_id=sound_id,
+            audio_base64=audio_base64,
+            codec=codec,
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+            interleaved=interleaved,
+            buffer_size=buffer_size,
+        )
+
+    async def store_sound_file(
+        self,
+        sound_id: str,
+        file_path: Union[str, Path],
+        *,
+        codec: Optional[str] = None,
+        sample_rate: Optional[int] = None,
+        num_channels: Optional[int] = None,
+        interleaved: Optional[bool] = None,
+        buffer_size: Optional[int] = None,
+    ) -> dict[str, Any]:
+        path = Path(file_path)
+        audio_bytes = path.read_bytes()
+        return await self.store_sound_bytes(
+            sound_id=sound_id,
+            audio_bytes=audio_bytes,
+            codec=codec,
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+            interleaved=interleaved,
+            buffer_size=buffer_size,
+        )
+
+    async def play_sound(
+        self,
+        sound_id: Optional[str] = None,
+        *,
+        url: Optional[str] = None,
+        volume: Optional[float] = None,
+        codec: Optional[str] = None,
+        sample_rate: Optional[int] = None,
+        num_channels: Optional[int] = None,
+    ) -> dict[str, Any]:
+        has_sound_id = sound_id is not None and sound_id != ""
+        has_url = url is not None and url != ""
+        if has_sound_id == has_url:
+            raise ValueError("Provide exactly one of sound_id or url.")
+
+        params: dict[str, Any] = {}
+        if has_sound_id:
+            params["sound_id"] = sound_id
+        if has_url:
+            params["url"] = url
+        if volume is not None:
+            params["volume"] = volume
+        if codec is not None:
+            params["codec"] = codec
+        if sample_rate is not None:
+            params["sample_rate"] = sample_rate
+        if num_channels is not None:
+            params["num_channels"] = num_channels
+        return await self.call("play_sound", params)
+
+    async def start_audio_stream(self, volume: Optional[float] = None) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if volume is not None:
+            params["volume"] = volume
+        return await self.call("start_audio_stream", params)
+
+    async def push_audio_stream_chunk(self, audio_base64: str) -> dict[str, Any]:
+        return await self.call(
+            "push_audio_stream_chunk",
+            {
+                "audio_base64": audio_base64,
+            },
+        )
+
+    async def push_audio_stream_chunk_bytes(self, audio_chunk: bytes) -> dict[str, Any]:
+        audio_base64 = base64.b64encode(audio_chunk).decode("ascii")
+        return await self.push_audio_stream_chunk(audio_base64=audio_base64)
+
+    async def push_audio_stream_chunk_file(self, file_path: Union[str, Path]) -> dict[str, Any]:
+        path = Path(file_path)
+        audio_bytes = path.read_bytes()
+        return await self.push_audio_stream_chunk_bytes(audio_chunk=audio_bytes)
+
+    async def stop_audio_stream(self) -> dict[str, Any]:
+        return await self.call("stop_audio_stream", {})
 
     async def set_auto_connect(self, device_ids: list[str]) -> dict[str, Any]:
         return await self.call("set_auto_connect", {"device_ids": device_ids})
