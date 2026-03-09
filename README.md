@@ -38,7 +38,7 @@ audio_df = dataset.get_audio_dataframe()
 
 ```python
 import asyncio
-from open_wearable import OpenWearableIPCClient
+from open_wearables import OpenWearableIPCClient
 
 
 async def main() -> None:
@@ -61,6 +61,27 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+## IPC Audio Example
+
+```python
+import asyncio
+from open_wearables import OpenWearableIPCClient
+
+
+async def main() -> None:
+    async with OpenWearableIPCClient("ws://192.168.1.23:8765/ws") as client:
+        await client.audio.store_sound_file("beep_ok", "beep.wav", codec="wav")
+        await client.audio.play_sound("beep_ok", volume=1.0, codec="wav")
+        await client.audio.play_sound(url="https://example.org/alert.wav", volume=0.7)
+
+        async with client.audio.stream(volume=0.8) as stream:
+            stream_bytes = b"...raw chunk bytes..."
+            await stream.push(stream_bytes)
+
+
+asyncio.run(main())
+```
+
 ## Documentation
 
 - [Documentation index](docs/README.md)
@@ -72,12 +93,12 @@ asyncio.run(main())
 
 The library is organized into focused layers:
 
-- `open_wearable.schema`: sensor schema types and default schema builders.
-- `open_wearable.parsing`: stream parsing, payload parsers, and microphone helpers.
-- `open_wearable.data`: high-level dataset API (`SensorDataset`) and sensor accessors.
-- `open_wearable.ipc`: asynchronous WebSocket IPC client and protocol models.
+- `open_wearables.schema`: sensor schema types and default schema builders.
+- `open_wearables.parsing`: stream parsing, payload parsers, and microphone helpers.
+- `open_wearables.data`: high-level dataset API (`SensorDataset`) and sensor accessors.
+- `open_wearables.ipc`: asynchronous WebSocket IPC client and protocol models.
 
-Legacy flat modules (`open_wearable.scheme`, `open_wearable.parser`, `open_wearable.dataset`) remain available as compatibility facades.
+Legacy flat modules (`open_wearables.scheme`, `open_wearables.parser`, `open_wearables.dataset`) remain available as compatibility facades.
 
 ## License
 
