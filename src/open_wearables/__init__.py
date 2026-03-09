@@ -1,5 +1,7 @@
 from .data import SensorDataset, load_recordings
 from .ipc import (
+    AudioController,
+    AudioStreamSession,
     DiscoveredDevice,
     IPCClosedError,
     IPCError,
@@ -19,6 +21,8 @@ from .ipc import (
 )
 
 __all__ = [
+    "AudioController",
+    "AudioStreamSession",
     "DiscoveredDevice",
     "IPCClosedError",
     "IPCError",
