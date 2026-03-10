@@ -269,9 +269,8 @@ class AudioController:
 
     async def play_sound(
         self,
-        sound_id: Optional[str] = None,
+        sound_id: str,
         *,
-        url: Optional[str] = None,
         volume: Optional[float] = None,
         codec: Optional[str] = None,
         sample_rate: Optional[int] = None,
@@ -279,7 +278,6 @@ class AudioController:
     ) -> dict[str, Any]:
         return await self._client.play_sound(
             sound_id=sound_id,
-            url=url,
             volume=volume,
             codec=codec,
             sample_rate=sample_rate,
@@ -560,24 +558,17 @@ class OpenWearableIPCClient:
 
     async def play_sound(
         self,
-        sound_id: Optional[str] = None,
+        sound_id: str,
         *,
-        url: Optional[str] = None,
         volume: Optional[float] = None,
         codec: Optional[str] = None,
         sample_rate: Optional[int] = None,
         num_channels: Optional[int] = None,
     ) -> dict[str, Any]:
-        has_sound_id = sound_id is not None and sound_id != ""
-        has_url = url is not None and url != ""
-        if has_sound_id == has_url:
-            raise ValueError("Provide exactly one of sound_id or url.")
+        if sound_id == "":
+            raise ValueError("sound_id must not be empty.")
 
-        params: dict[str, Any] = {}
-        if has_sound_id:
-            params["sound_id"] = sound_id
-        if has_url:
-            params["url"] = url
+        params: dict[str, Any] = {"sound_id": sound_id}
         if volume is not None:
             params["volume"] = volume
         if codec is not None:
