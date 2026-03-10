@@ -72,7 +72,6 @@ async def main() -> None:
     async with OpenWearableIPCClient("ws://192.168.1.23:8765/ws") as client:
         await client.audio.store_sound_file("beep_ok", "beep.wav", codec="wav")
         await client.audio.play_sound("beep_ok", volume=1.0, codec="wav")
-        await client.audio.play_sound(url="https://example.org/alert.wav", volume=0.7)
 
 
 asyncio.run(main())
