@@ -75,7 +75,7 @@ Other helpers:
 Raw websocket-aligned methods:
 
 - `store_sound(sound_id, audio_base64, codec=None, sample_rate=None, num_channels=None, interleaved=None, buffer_size=None)`
-- `play_sound(sound_id=None, url=None, volume=None, codec=None, sample_rate=None, num_channels=None)` (exactly one of `sound_id` or `url`)
+- `play_sound(sound_id, volume=None, codec=None, sample_rate=None, num_channels=None)`
 
 Python-friendly helpers:
 
@@ -91,7 +91,6 @@ Example:
 async with OpenWearableIPCClient("ws://192.168.1.23:8765/ws") as client:
     await client.audio.store_sound_file("beep_ok", "beep.wav")
     await client.audio.play_sound("beep_ok", volume=1.0)
-    await client.audio.play_sound(url="https://example.org/alert.wav", volume=0.7)
 ```
 
 ## `SensorDataset`
