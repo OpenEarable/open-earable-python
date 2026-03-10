@@ -74,10 +74,6 @@ async def main() -> None:
         await client.audio.play_sound("beep_ok", volume=1.0, codec="wav")
         await client.audio.play_sound(url="https://example.org/alert.wav", volume=0.7)
 
-        async with client.audio.stream(volume=0.8) as stream:
-            stream_bytes = b"...raw chunk bytes..."
-            await stream.push(stream_bytes)
-
 
 asyncio.run(main())
 ```
