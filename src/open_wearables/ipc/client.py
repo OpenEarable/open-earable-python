@@ -219,54 +219,8 @@ class Wearable:
         )
 
 
-class AudioStreamSession:
-    """Context-managed chunked audio playback session."""
-
-    def __init__(
-        self,
-        client: "OpenWearableIPCClient",
-        volume: Optional[float] = None,
-    ) -> None:
-        self._client = client
-        self._volume = volume
-        self._started = False
-
-    async def __aenter__(self) -> "AudioStreamSession":
-        await self.start()
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb) -> None:
-        await self.stop()
-
-    async def start(self) -> dict[str, Any]:
-        result = await self._client.start_audio_stream(volume=self._volume)
-        self._started = True
-        return result
-
-    async def push(self, audio_chunk: bytes) -> dict[str, Any]:
-        if not self._started:
-            await self.start()
-        return await self._client.push_audio_stream_chunk_bytes(audio_chunk)
-
-    async def push_base64(self, audio_base64: str) -> dict[str, Any]:
-        if not self._started:
-            await self.start()
-        return await self._client.push_audio_stream_chunk(audio_base64=audio_base64)
-
-    async def push_file(self, file_path: Union[str, Path]) -> dict[str, Any]:
-        if not self._started:
-            await self.start()
-        return await self._client.push_audio_stream_chunk_file(file_path)
-
-    async def stop(self) -> dict[str, Any]:
-        if not self._started:
-            return {"stopped": True}
-        self._started = False
-        return await self._client.stop_audio_stream()
-
-
 class AudioController:
-    """High-level audio helpers for sound storage/playback and chunk streaming."""
+    """High-level audio helpers for sound storage and playback."""
 
     def __init__(self, client: "OpenWearableIPCClient") -> None:
         self._client = client
@@ -331,10 +285,6 @@ class AudioController:
             sample_rate=sample_rate,
             num_channels=num_channels,
         )
-
-    def stream(self, volume: Optional[float] = None) -> AudioStreamSession:
-        return AudioStreamSession(client=self._client, volume=volume)
-
 
 class OpenWearableIPCClient:
     """Async client for OpenWearable WebSocket IPC daemon."""
@@ -637,32 +587,6 @@ class OpenWearableIPCClient:
         if num_channels is not None:
             params["num_channels"] = num_channels
         return await self.call("play_sound", params)
-
-    async def start_audio_stream(self, volume: Optional[float] = None) -> dict[str, Any]:
-        params: dict[str, Any] = {}
-        if volume is not None:
-            params["volume"] = volume
-        return await self.call("start_audio_stream", params)
-
-    async def push_audio_stream_chunk(self, audio_base64: str) -> dict[str, Any]:
-        return await self.call(
-            "push_audio_stream_chunk",
-            {
-                "audio_base64": audio_base64,
-            },
-        )
-
-    async def push_audio_stream_chunk_bytes(self, audio_chunk: bytes) -> dict[str, Any]:
-        audio_base64 = base64.b64encode(audio_chunk).decode("ascii")
-        return await self.push_audio_stream_chunk(audio_base64=audio_base64)
-
-    async def push_audio_stream_chunk_file(self, file_path: Union[str, Path]) -> dict[str, Any]:
-        path = Path(file_path)
-        audio_bytes = path.read_bytes()
-        return await self.push_audio_stream_chunk_bytes(audio_chunk=audio_bytes)
-
-    async def stop_audio_stream(self) -> dict[str, Any]:
-        return await self.call("stop_audio_stream", {})
 
     async def set_auto_connect(self, device_ids: list[str]) -> dict[str, Any]:
         return await self.call("set_auto_connect", {"device_ids": device_ids})

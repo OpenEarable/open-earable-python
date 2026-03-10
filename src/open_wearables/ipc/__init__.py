@@ -1,6 +1,5 @@
 from .client import (
     AudioController,
-    AudioStreamSession,
     OpenWearableIPCClient,
     StreamSubscription,
     Wearable,
@@ -25,7 +24,6 @@ from .models import (
 
 __all__ = [
     "AudioController",
-    "AudioStreamSession",
     "DiscoveredDevice",
     "IPCClosedError",
     "IPCError",
