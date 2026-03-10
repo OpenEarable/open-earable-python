@@ -34,12 +34,66 @@ ppg_red = dataset.ppg["ppg.red"]
 audio_df = dataset.get_audio_dataframe()
 ```
 
+## IPC WebSocket Example
+
+```python
+import asyncio
+from open_wearables import OpenWearableIPCClient
+
+
+async def main() -> None:
+    async with OpenWearableIPCClient() as client:
+        await client.start_scan()
+        devices = await client.get_discovered_devices()
+        wearable = client.wearable(devices[0].id)
+
+        await wearable.connect()
+        await wearable.actions.synchronize_time()
+
+        sensors = await wearable.actions.list_sensors()
+        stream = await wearable.streams.sensor_values(sensor_id=sensors[0].sensor_id)
+        async for event in stream:
+            print(event.data)
+            break
+        await stream.close()
+
+
+asyncio.run(main())
+```
+
+## IPC Audio Example
+
+```python
+import asyncio
+from open_wearables import OpenWearableIPCClient
+
+
+async def main() -> None:
+    async with OpenWearableIPCClient("ws://192.168.1.23:8765/ws") as client:
+        await client.audio.store_sound_file("beep_ok", "beep.wav", codec="wav")
+        await client.audio.play_sound("beep_ok", volume=1.0, codec="wav")
+
+
+asyncio.run(main())
+```
+
 ## Documentation
 
 - [Documentation index](docs/README.md)
 - [Getting started](docs/getting-started.md)
 - [Data model and sensor channels](docs/data-model.md)
 - [API reference](docs/api-reference.md)
+
+## Package Architecture
+
+The library is organized into focused layers:
+
+- `open_wearables.schema`: sensor schema types and default schema builders.
+- `open_wearables.parsing`: stream parsing, payload parsers, and microphone helpers.
+- `open_wearables.data`: high-level dataset API (`SensorDataset`) and sensor accessors.
+- `open_wearables.ipc`: asynchronous WebSocket IPC client and protocol models.
+
+Legacy flat modules (`open_wearables.scheme`, `open_wearables.parser`, `open_wearables.dataset`) remain available as compatibility facades.
 
 ## License
 
