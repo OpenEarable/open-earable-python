@@ -1,5 +1,5 @@
 import enum
-from typing import Sequence
+from typing import Optional, Sequence
 
 
 class ParseType(enum.Enum):
@@ -34,13 +34,20 @@ class SensorComponentGroupScheme:
 class SensorScheme:
     """Schema definition for one OpenEarable sensor stream."""
 
-    def __init__(self, name: str, sid: int, groups: list[SensorComponentGroupScheme]):
+    def __init__(
+        self,
+        name: str,
+        sid: int,
+        groups: list[SensorComponentGroupScheme],
+        sampling_rate: Optional[float] = None,
+    ):
         self.name = name
         self.sid = sid
         self.groups = groups
+        self.sampling_rate = sampling_rate
 
     def __repr__(self) -> str:
-        return f"SensorScheme(name={self.name}, sid={self.sid}, groups={self.groups})"
+        return f"SensorScheme(name={self.name}, sid={self.sid}, groups={self.groups}, sampling_rate={self.sampling_rate})"
 
 
 def group(
