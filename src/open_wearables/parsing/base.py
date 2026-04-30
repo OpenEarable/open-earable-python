@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from .audio import MicPacket, mic_samples_to_stereo
+from .headers import OeFileHeader
 
 
 class PayloadParser:
@@ -27,6 +28,7 @@ class ParseResult:
     mic_samples: List[int]
     mic_packets: List[MicPacket] = field(default_factory=list)
     audio_stereo: Optional[np.ndarray] = None
+    file_header: Optional[OeFileHeader] = None
 
     @staticmethod
     def mic_samples_to_stereo(mic_samples: List[int]) -> Optional[np.ndarray]:

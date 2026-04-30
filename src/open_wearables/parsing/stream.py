@@ -7,13 +7,17 @@ from open_wearables.schema import SensorScheme
 
 from .audio import MicPacket, mic_samples_to_stereo
 from .base import ParseResult, PayloadParser
+from .headers import OeFileHeader, read_oe_header
 from .payload_parsers import MicPayloadParser, SchemePayloadParser
 
 
 class Parser:
+    """Incremental parser for OpenEarable packet streams and ``.oe`` files."""
+
     def __init__(self, parsers: dict[int, PayloadParser], verbose: bool = False):
         self.parsers = parsers
         self.verbose = verbose
+        self.sensor_schemes: dict[int, SensorScheme] = {}
 
     @classmethod
     def from_sensor_schemes(
@@ -24,7 +28,9 @@ class Parser:
         parsers: dict[int, PayloadParser] = {
             sid: SchemePayloadParser(scheme) for sid, scheme in sensor_schemes.items()
         }
-        return cls(parsers=parsers, verbose=verbose)
+        parser = cls(parsers=parsers, verbose=verbose)
+        parser.sensor_schemes = dict(sensor_schemes)
+        return parser
 
     def parse(
         self,
@@ -33,10 +39,49 @@ class Parser:
         chunk_size: int = 4096,
         max_resync_scan_bytes: int = 256,
     ) -> ParseResult:
+        """Parse a stream from the beginning of an OE file."""
+        header_result = read_oe_header(data_stream)
+        file_header = header_result.header
+        if file_header is not None:
+            self._apply_file_header(file_header)
+            if self.verbose:
+                print(
+                    f"Parsed OE header v{file_header.version}: "
+                    f"timestamp={file_header.timestamp}, header_size={file_header.header_size}"
+                )
+
+        return self.parse_packets(
+            data_stream,
+            file_header=file_header,
+            initial_packet_bytes=header_result.initial_packet_bytes,
+            chunk_size=chunk_size,
+            max_resync_scan_bytes=max_resync_scan_bytes,
+        )
+
+    def parse_packets(
+        self,
+        data_stream: BinaryIO,
+        *,
+        file_header: Optional[OeFileHeader] = None,
+        initial_packet_bytes: bytes = b"",
+        chunk_size: int = 4096,
+        max_resync_scan_bytes: int = 256,
+    ) -> ParseResult:
+        """Parse packet data from a stream positioned at the first packet.
+
+        Parameters
+        ----------
+        data_stream:
+            Binary stream positioned at packet data, not at the file header.
+        file_header:
+            Optional file-level header metadata to attach to the result.
+        initial_packet_bytes:
+            Bytes already consumed by a caller before packet parsing starts.
+        """
         rows_by_sid: dict[int, list[dict]] = {}
 
         header_size = 10
-        buffer = bytearray()
+        buffer = bytearray(initial_packet_bytes)
         packet_idx = 0
         mic_samples: List[int] = []
         mic_packets: List[MicPacket] = []
@@ -188,7 +233,21 @@ class Parser:
             mic_samples=mic_samples,
             mic_packets=mic_packets,
             audio_stereo=audio_stereo,
+            file_header=file_header,
         )
+
+    def _apply_file_header(self, file_header: OeFileHeader) -> None:
+        """Update parser registrations with schemes embedded in a v3 file header."""
+        if not file_header.sensor_schemes:
+            return
+
+        for sid, scheme in file_header.sensor_schemes.items():
+            existing_parser = self.parsers.get(sid)
+            if isinstance(existing_parser, MicPayloadParser):
+                continue
+            self.parsers[sid] = SchemePayloadParser(scheme)
+
+        self.sensor_schemes.update(file_header.sensor_schemes)
 
     def _parse_header(self, header: bytes) -> tuple[int, int, int]:
         sid, size, time = struct.unpack("<BBQ", header)
