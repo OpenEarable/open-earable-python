@@ -146,6 +146,17 @@ Returns one sensor DataFrame by name.
 - Valid names: `imu`, `barometer`, `microphone`, `ppg`, `optical_temp`, `bone_acc`
 - Raises `KeyError` for unknown names.
 
+#### `get_sampling_rate(sensor: str | int) -> Optional[float]`
+
+Returns the default sampling rate for a sensor name or SID when the file header
+contains v3 frequency metadata. Returns `None` for v2 files or sensors without
+frequency metadata.
+
+#### `get_sampling_rates() -> Dict[str, Optional[float]]`
+
+Returns default sampling rates for all known dataset sensors keyed by sensor
+name. Values are `None` when metadata is unavailable.
+
 #### `get_dataframe() -> pandas.DataFrame`
 
 Builds and caches a merged DataFrame across all non-empty sensor streams.
