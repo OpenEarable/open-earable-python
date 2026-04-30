@@ -7,6 +7,7 @@
 - [Getting started](getting-started.md)
 - [Data model and sensor channels](data-model.md)
 - [API reference](api-reference.md)
+- [Parser internals](parser-internals.md)
 
 ## Package Scope
 
