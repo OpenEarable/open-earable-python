@@ -22,6 +22,9 @@ from .accessors import SensorAccessor
 from .constants import COLORS, LABELS, SENSOR_FORMATS, SENSOR_SID, SID_NAMES
 
 
+DEFAULT_MICROPHONE_SAMPLING_RATE = 48000
+
+
 class SensorDataset:
     """High-level representation of an OpenEarable sensor recording file."""
 
@@ -37,7 +40,7 @@ class SensorDataset:
         self.sensor_dfs: Dict[int, pd.DataFrame] = {}
         self.audio_stereo: Optional[np.ndarray] = None
         self.audio_df: pd.DataFrame = pd.DataFrame()
-        self._audio_df_sampling_rate: Optional[int] = None
+        self._audio_df_sampling_rate: Optional[float] = None
         self.bone_sound: Optional[np.ndarray] = None
         self.df: pd.DataFrame = pd.DataFrame()
 
@@ -132,7 +135,7 @@ class SensorDataset:
         Returns
         -------
         Optional[float]
-            The default sampling rate recorded in a v3 file header, or ``None``
+            The default sampling rate recorded in a v3+ file header, or ``None``
             when the file does not contain sampling-rate metadata for the sensor.
         """
         if isinstance(sensor, str):
@@ -208,18 +211,40 @@ class SensorDataset:
 
         return self.df
 
-    def get_audio_dataframe(self, sampling_rate: int = 48000) -> pd.DataFrame:
-        if sampling_rate <= 0:
-            raise ValueError(f"sampling_rate must be > 0, got {sampling_rate}")
+    def _resolve_microphone_sampling_rate(
+        self,
+        sampling_rate: Optional[float],
+    ) -> float:
+        """Return the explicit or file-header microphone sampling rate."""
+        if sampling_rate is not None:
+            resolved_rate = float(sampling_rate)
+        elif self.file_header is not None and self.file_header.version >= 3:
+            resolved_rate = (
+                self.get_sampling_rate("microphone")
+                or DEFAULT_MICROPHONE_SAMPLING_RATE
+            )
+        else:
+            resolved_rate = DEFAULT_MICROPHONE_SAMPLING_RATE
 
-        if self._audio_df_sampling_rate == sampling_rate:
+        if resolved_rate <= 0:
+            raise ValueError(f"sampling_rate must be > 0, got {resolved_rate}")
+        return resolved_rate
+
+    def get_audio_dataframe(
+        self,
+        sampling_rate: Optional[float] = None,
+    ) -> pd.DataFrame:
+        """Return microphone samples indexed with the resolved sampling rate."""
+        resolved_sampling_rate = self._resolve_microphone_sampling_rate(sampling_rate)
+
+        if self._audio_df_sampling_rate == resolved_sampling_rate:
             return self.audio_df
 
         mic_packets = getattr(self.parse_result, "mic_packets", [])
         if not mic_packets:
             self.audio_df = pd.DataFrame(columns=["mic.inner", "mic.outer"])
             self.audio_df.index.name = "timestamp"
-            self._audio_df_sampling_rate = sampling_rate
+            self._audio_df_sampling_rate = resolved_sampling_rate
             return self.audio_df
 
         timestamps: List[np.ndarray] = []
@@ -228,7 +253,7 @@ class SensorDataset:
         for packet in mic_packets:
             ts, stereo = mic_packet_to_stereo_frames(
                 packet=packet,
-                sampling_rate=sampling_rate,
+                sampling_rate=resolved_sampling_rate,
             )
             if stereo.size == 0:
                 continue
@@ -238,7 +263,7 @@ class SensorDataset:
         if not timestamps:
             self.audio_df = pd.DataFrame(columns=["mic.inner", "mic.outer"])
             self.audio_df.index.name = "timestamp"
-            self._audio_df_sampling_rate = sampling_rate
+            self._audio_df_sampling_rate = resolved_sampling_rate
             return self.audio_df
 
         all_ts = np.concatenate(timestamps)
@@ -253,9 +278,12 @@ class SensorDataset:
         )
         self.audio_df.index.name = "timestamp"
         self.audio_df = self.audio_df[~self.audio_df.index.duplicated(keep="first")]
-        self._audio_df_sampling_rate = sampling_rate
+        self._audio_df_sampling_rate = resolved_sampling_rate
 
-        if sampling_rate == 48000:
+        if (
+            sampling_rate is None
+            or resolved_sampling_rate == DEFAULT_MICROPHONE_SAMPLING_RATE
+        ):
             self.sensor_dfs[self.SENSOR_SID["microphone"]] = self.audio_df
 
         return self.audio_df
@@ -268,21 +296,25 @@ class SensorDataset:
         if not self.df.empty:
             self.df.to_csv(path)
 
-    def play_audio(self, sampling_rate: int = 48000) -> None:
+    def play_audio(self, sampling_rate: Optional[float] = None) -> None:
+        """Play microphone audio using explicit or file-header sampling rate."""
         if self.audio_stereo is None:
             print("❌ No microphone data available.")
             return
 
+        resolved_sampling_rate = self._resolve_microphone_sampling_rate(sampling_rate)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            write(tmp.name, sampling_rate, self.audio_stereo)
+            write(tmp.name, int(resolved_sampling_rate), self.audio_stereo)
             display(Audio(tmp.name))
 
-    def save_audio(self, path: str, sampling_rate: int = 48000) -> None:
+    def save_audio(self, path: str, sampling_rate: Optional[float] = None) -> None:
+        """Save microphone audio using explicit or file-header sampling rate."""
         if self.audio_stereo is None:
             print("❌ No microphone data available to save.")
             return
         try:
-            write(path, sampling_rate, self.audio_stereo)
+            resolved_sampling_rate = self._resolve_microphone_sampling_rate(sampling_rate)
+            write(path, int(resolved_sampling_rate), self.audio_stereo)
             print(f"✅ Audio saved successfully to {path}")
         except Exception as exc:
             print(f"❌ Error saving audio to {path}: {exc}")

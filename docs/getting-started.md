@@ -65,7 +65,7 @@ mag_z = dataset.imu.mag.z
 
 ```python
 # Timestamp-indexed stereo audio DataFrame
-audio_df = dataset.get_audio_dataframe()  # default 48_000 Hz
+audio_df = dataset.get_audio_dataframe()  # header mic rate, or 48_000 Hz fallback
 print(audio_df.columns)  # mic.inner, mic.outer
 
 # Save WAV
