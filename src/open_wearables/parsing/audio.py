@@ -23,7 +23,7 @@ def interleaved_mic_to_stereo(
 
 def mic_packet_to_stereo_frames(
     packet: MicPacket,
-    sampling_rate: int,
+    sampling_rate: float,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Return timestamps and stereo frames for a parsed microphone packet."""
     if sampling_rate <= 0:

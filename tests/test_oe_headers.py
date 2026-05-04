@@ -182,6 +182,61 @@ class OeHeaderTests(unittest.TestCase):
         self.assertEqual(dataset.get_sampling_rates()["imu"], 50.0)
         self.assertIsNone(dataset.get_sampling_rates()["ppg"])
 
+    def test_sensor_dataset_uses_v3_microphone_sampling_rate_by_default(self):
+        sensor_scheme = _single_sensor_scheme(
+            sid=2,
+            sensor_name="Microphone",
+            group_name="mic",
+            component_name="sample",
+            parse_type=2,
+            frequencies=(16000.0,),
+        )
+        parse_info = _parse_info_blob([2], [sensor_scheme])
+        content = (
+            _v3_header(parse_info)
+            + struct.pack("<BBQhhhh", 2, 8, 2_000_000, 10, 20, 30, 40)
+        )
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".oe") as temp_file:
+            temp_file.write(content)
+            temp_path = temp_file.name
+
+        try:
+            dataset = SensorDataset(temp_path)
+        finally:
+            os.unlink(temp_path)
+
+        self.assertEqual(dataset.get_sampling_rate("microphone"), 16000.0)
+        self.assertEqual(dataset.microphone.df.index[0], 2.0)
+        self.assertAlmostEqual(dataset.microphone.df.index[1], 2.0 + (1 / 16000.0))
+
+    def test_sensor_dataset_audio_sampling_rate_can_be_overridden(self):
+        sensor_scheme = _single_sensor_scheme(
+            sid=2,
+            sensor_name="Microphone",
+            group_name="mic",
+            component_name="sample",
+            parse_type=2,
+            frequencies=(16000.0,),
+        )
+        parse_info = _parse_info_blob([2], [sensor_scheme])
+        content = (
+            _v3_header(parse_info)
+            + struct.pack("<BBQhhhh", 2, 8, 2_000_000, 10, 20, 30, 40)
+        )
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".oe") as temp_file:
+            temp_file.write(content)
+            temp_path = temp_file.name
+
+        try:
+            dataset = SensorDataset(temp_path)
+            audio_df = dataset.get_audio_dataframe(sampling_rate=48000)
+        finally:
+            os.unlink(temp_path)
+
+        self.assertAlmostEqual(audio_df.index[1], 2.0 + (1 / 48000.0))
+
     def test_sensor_dataset_sampling_rate_returns_none_without_metadata(self):
         scheme = SensorScheme(
             name="test",

@@ -149,7 +149,7 @@ Returns one sensor DataFrame by name.
 #### `get_sampling_rate(sensor: str | int) -> Optional[float]`
 
 Returns the default sampling rate for a sensor name or SID when the file header
-contains v3 frequency metadata. Returns `None` for v2 files or sensors without
+contains v3+ frequency metadata. Returns `None` for v2 files or sensors without
 frequency metadata.
 
 #### `get_sampling_rates() -> Dict[str, Optional[float]]`
@@ -161,7 +161,7 @@ name. Values are `None` when metadata is unavailable.
 
 Builds and caches a merged DataFrame across all non-empty sensor streams.
 
-#### `get_audio_dataframe(sampling_rate: int = 48000) -> pandas.DataFrame`
+#### `get_audio_dataframe(sampling_rate: Optional[float] = None) -> pandas.DataFrame`
 
 Returns timestamp-indexed audio DataFrame with columns:
 
@@ -170,6 +170,9 @@ Returns timestamp-indexed audio DataFrame with columns:
 
 Behavior:
 
+- Uses the microphone sampling rate from v3+ file headers when available.
+- Falls back to 48 kHz when no microphone sampling-rate metadata is present.
+- Uses the caller-provided `sampling_rate` as an explicit override.
 - Raises `ValueError` if `sampling_rate <= 0`.
 - Returns empty DataFrame with expected columns if no mic packets exist.
 - Caches by sampling rate.
@@ -184,11 +187,11 @@ Saves the combined DataFrame to CSV if `self.df` is non-empty.
 
 Call `get_dataframe()` first to ensure `self.df` is populated.
 
-#### `play_audio(sampling_rate: int = 48000) -> None`
+#### `play_audio(sampling_rate: Optional[float] = None) -> None`
 
 Plays audio in IPython/Jupyter via `IPython.display.Audio`.
 
-#### `save_audio(path: str, sampling_rate: int = 48000) -> None`
+#### `save_audio(path: str, sampling_rate: Optional[float] = None) -> None`
 
 Writes WAV audio with `scipy.io.wavfile.write`.
 
