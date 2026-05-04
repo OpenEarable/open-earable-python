@@ -33,6 +33,7 @@ package "open_wearables.data" {
 
 package "open_wearables.parsing" {
   class Parser
+  class PacketHeader
   class ParseResult
   class OeFileHeader
   class SchemePayloadParser
@@ -49,6 +50,7 @@ package "open_wearables.schema" {
 SensorDataset --> Parser
 SensorDataset --> SensorAccessor
 Parser --> ParseResult
+Parser --> PacketHeader
 Parser --> OeFileHeader
 Parser --> SchemePayloadParser
 Parser --> MicPayloadParser
@@ -239,12 +241,18 @@ Each packet starts with a 10-byte packet header:
 
 After reading a packet header, `Parser`:
 
-1. Looks up a payload parser by sensor ID.
-2. Reads `Payload Size` bytes.
-3. Parses the payload.
-4. Flattens grouped values into DataFrame columns.
-5. Adds rows into a per-SID row buffer.
-6. Converts row buffers into pandas DataFrames at the end.
+1. Decodes the packet prefix into an internal `PacketHeader`.
+2. Looks up a payload parser by sensor ID.
+3. Reads `Payload Size` bytes.
+4. Parses the payload.
+5. Sends microphone payloads to the microphone accumulator.
+6. Flattens grouped sensor values into DataFrame columns.
+7. Adds rows into a per-SID row buffer.
+8. Converts row buffers into pandas DataFrames at the end.
+
+The parser keeps these internal steps in separate helpers so packet framing,
+resynchronization, microphone accumulation, value flattening, and DataFrame
+creation can evolve independently without changing the public API.
 
 ```plantuml
 @startuml
@@ -280,8 +288,9 @@ Payload parser implementations live in `open_wearables.parsing.payload_parsers`.
 ### `SchemePayloadParser`
 
 `SchemePayloadParser` decodes structured sensor payloads from `SensorScheme`
-objects. It precomputes the expected payload size from the scheme component
-types.
+objects. It uses a single parse-type registry to derive both struct formats and
+component byte widths, then precomputes the expected payload size from the
+scheme component types.
 
 It supports:
 

@@ -6,15 +6,37 @@ from open_wearables.schema import ParseType, SensorScheme
 from .base import PayloadParser
 
 
+_PARSE_TYPE_FORMATS: dict[ParseType, tuple[str, int]] = {
+    ParseType.UINT8: ("<B", 1),
+    ParseType.UINT16: ("<H", 2),
+    ParseType.UINT32: ("<I", 4),
+    ParseType.INT8: ("<b", 1),
+    ParseType.INT16: ("<h", 2),
+    ParseType.INT32: ("<i", 4),
+    ParseType.FLOAT: ("<f", 4),
+    ParseType.DOUBLE: ("<d", 8),
+}
+
+
 class MicPayloadParser(PayloadParser):
     """Payload parser for microphone packets (int16 PCM samples)."""
 
     def __init__(self, sample_count: int, verbose: bool = False):
+        """Create a microphone payload parser.
+
+        Parameters
+        ----------
+        sample_count:
+            Expected number of little-endian int16 samples per packet.
+        verbose:
+            Enables diagnostic output for malformed microphone payloads.
+        """
         self.sample_count = sample_count
         self.expected_size = sample_count * 2
         self.verbose = verbose
 
     def parse(self, data: bytes, **kwargs) -> List[dict]:
+        """Decode microphone payload bytes into a sample tuple."""
         if len(data) != self.expected_size and self.verbose:
             print(
                 f"Mic payload size {len(data)} bytes does not match expected "
@@ -34,31 +56,24 @@ class MicPayloadParser(PayloadParser):
 
 
 class SchemePayloadParser(PayloadParser):
-    def __init__(self, sensor_scheme: SensorScheme):
-        self.sensor_scheme = sensor_scheme
+    """Payload parser driven by an OpenEarable ``SensorScheme`` definition."""
 
-        size = 0
-        for group in self.sensor_scheme.groups:
-            for component in group.components:
-                if component.data_type in (ParseType.UINT8, ParseType.INT8):
-                    size += 1
-                elif component.data_type in (ParseType.UINT16, ParseType.INT16):
-                    size += 2
-                elif component.data_type in (
-                    ParseType.UINT32,
-                    ParseType.INT32,
-                    ParseType.FLOAT,
-                ):
-                    size += 4
-                elif component.data_type == ParseType.DOUBLE:
-                    size += 8
-                else:
-                    raise ValueError(
-                        f"Unsupported data type in scheme: {component.data_type}"
-                    )
-        self.expected_size = size
+    def __init__(self, sensor_scheme: SensorScheme):
+        """Create a parser for payloads matching ``sensor_scheme``."""
+        self.sensor_scheme = sensor_scheme
+        self.expected_size = self._calculate_expected_size(sensor_scheme)
+
+    @staticmethod
+    def _calculate_expected_size(sensor_scheme: SensorScheme) -> int:
+        """Return the byte size for one unbuffered sample in ``sensor_scheme``."""
+        return sum(
+            _format_for(component.data_type)[1]
+            for group in sensor_scheme.groups
+            for component in group.components
+        )
 
     def check_size(self, data: bytes) -> None:
+        """Validate that ``data`` is either one sample or a buffered payload."""
         size = len(data)
         if size != self.expected_size and not (
             size > self.expected_size and (size - 2) % self.expected_size == 0
@@ -69,10 +84,12 @@ class SchemePayloadParser(PayloadParser):
             )
 
     def is_buffered(self, data: bytes) -> bool:
+        """Return whether ``data`` contains multiple samples and a time delta."""
         size = len(data)
         return size > self.expected_size and (size - 2) % self.expected_size == 0
 
     def parse(self, data: bytes, **kwargs) -> List[dict]:
+        """Decode a single-sample or buffered structured sensor payload."""
         self.check_size(data)
         if self.is_buffered(data):
             results = []
@@ -80,7 +97,9 @@ class SchemePayloadParser(PayloadParser):
             payload = data[:-2]
             n_packets = len(payload) // self.expected_size
             for i in range(n_packets):
-                packet_data = payload[i * self.expected_size : (i + 1) * self.expected_size]
+                packet_data = payload[
+                    i * self.expected_size : (i + 1) * self.expected_size
+                ]
                 parsed_packet = self.parse_packet(packet_data)
                 parsed_packet["t_delta"] = t_delta
                 results.append(parsed_packet)
@@ -88,40 +107,26 @@ class SchemePayloadParser(PayloadParser):
         return [self.parse_packet(data)]
 
     def parse_packet(self, data: bytes) -> dict:
+        """Decode one unbuffered structured sensor sample."""
         parsed_data = {}
         offset = 0
 
         for group in self.sensor_scheme.groups:
             group_data = {}
             for component in group.components:
-                if component.data_type == ParseType.UINT8:
-                    value = struct.unpack_from("<B", data, offset)[0]
-                    offset += 1
-                elif component.data_type == ParseType.UINT16:
-                    value = struct.unpack_from("<H", data, offset)[0]
-                    offset += 2
-                elif component.data_type == ParseType.UINT32:
-                    value = struct.unpack_from("<I", data, offset)[0]
-                    offset += 4
-                elif component.data_type == ParseType.INT8:
-                    value = struct.unpack_from("<b", data, offset)[0]
-                    offset += 1
-                elif component.data_type == ParseType.INT16:
-                    value = struct.unpack_from("<h", data, offset)[0]
-                    offset += 2
-                elif component.data_type == ParseType.INT32:
-                    value = struct.unpack_from("<i", data, offset)[0]
-                    offset += 4
-                elif component.data_type == ParseType.FLOAT:
-                    value = struct.unpack_from("<f", data, offset)[0]
-                    offset += 4
-                elif component.data_type == ParseType.DOUBLE:
-                    value = struct.unpack_from("<d", data, offset)[0]
-                    offset += 8
-                else:
-                    raise ValueError(f"Unsupported data type: {component.data_type}")
+                format_string, size = _format_for(component.data_type)
+                value = struct.unpack_from(format_string, data, offset)[0]
+                offset += size
 
                 group_data[component.name] = value
             parsed_data[group.name] = group_data
 
         return parsed_data
+
+
+def _format_for(parse_type: ParseType) -> tuple[str, int]:
+    """Return the struct format and byte width for ``parse_type``."""
+    try:
+        return _PARSE_TYPE_FORMATS[parse_type]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported data type: {parse_type}") from exc
