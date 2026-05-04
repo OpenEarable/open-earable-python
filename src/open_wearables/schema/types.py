@@ -3,6 +3,8 @@ from typing import Optional, Sequence
 
 
 class ParseType(enum.Enum):
+    """Binary scalar types supported by OpenEarable sensor schemes."""
+
     UINT8 = "uint8"
     UINT16 = "uint16"
     UINT32 = "uint32"
@@ -14,7 +16,10 @@ class ParseType(enum.Enum):
 
 
 class SensorComponentScheme:
+    """Schema entry for one named scalar value in a sensor payload."""
+
     def __init__(self, name: str, data_type: ParseType):
+        """Create a component with a display name and binary parse type."""
         self.name = name
         self.data_type = data_type
 
@@ -23,7 +28,10 @@ class SensorComponentScheme:
 
 
 class SensorComponentGroupScheme:
+    """Named group of related payload components."""
+
     def __init__(self, name: str, components: list[SensorComponentScheme]):
+        """Create a component group in payload order."""
         self.name = name
         self.components = components
 
@@ -41,6 +49,19 @@ class SensorScheme:
         groups: list[SensorComponentGroupScheme],
         sampling_rate: Optional[float] = None,
     ):
+        """Create a sensor scheme.
+
+        Parameters
+        ----------
+        name:
+            Human-readable sensor name.
+        sid:
+            Numeric sensor stream ID encoded in packet headers.
+        groups:
+            Ordered payload component groups.
+        sampling_rate:
+            Optional default sampling rate for the sensor.
+        """
         self.name = name
         self.sid = sid
         self.groups = groups
@@ -54,6 +75,7 @@ def group(
     name: str,
     components: Sequence[tuple[str, ParseType]],
 ) -> SensorComponentGroupScheme:
+    """Build a ``SensorComponentGroupScheme`` from component tuples."""
     return SensorComponentGroupScheme(
         name=name,
         components=[
