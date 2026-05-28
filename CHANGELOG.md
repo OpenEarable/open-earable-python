@@ -1,3 +1,6 @@
+## 0.2.1
+* Added support for oe format v3
+
 ## 0.2.0
 * Added ipc client to control the network connector of the OpenWearable app
 
